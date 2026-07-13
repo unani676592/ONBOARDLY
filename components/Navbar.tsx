@@ -34,12 +34,12 @@ export default function Navbar() {
         </ul>
 
         <div className="flex items-center gap-2 sm:gap-4">
-          <a
-            href="#top"
+          <Link
+            href="/login"
             className="hidden rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 sm:inline-block"
           >
             Log in
-          </a>
+          </Link>
           <a
             href="#cta"
             className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-indigo-600/30 transition-colors hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
