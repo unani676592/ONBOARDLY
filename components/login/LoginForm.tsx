@@ -2,8 +2,10 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
 import Logo from "@/components/Logo";
+import { supabase } from "@/lib/supabase";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -43,9 +45,13 @@ export default function LoginForm() {
     {},
   );
   const [submitting, setSubmitting] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<{
+    text: string;
+    kind: "info" | "error";
+  } | null>(null);
   const [mounted, setMounted] = useState(false);
   const [reduced, setReduced] = useState(false);
+  const router = useRouter();
 
   // Entrance animation gating
   useEffect(() => {
@@ -67,19 +73,41 @@ export default function LoginForm() {
     return next;
   }
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setNotice("");
+    setNotice(null);
     const next = validate();
     setErrors(next);
     if (Object.keys(next).length > 0) return;
 
     setSubmitting(true);
-    // Front-end preview only — no real auth, no redirect.
-    setTimeout(() => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+
+    if (error) {
       setSubmitting(false);
-      setNotice("Auth coming soon — this is a preview.");
-    }, 1000);
+      if (error.code === "email_not_confirmed" || /confirm/i.test(error.message)) {
+        setNotice({ text: "Please confirm your email first.", kind: "error" });
+      } else if (error.code === "invalid_credentials") {
+        setNotice({ text: "Email or password is incorrect.", kind: "error" });
+      } else {
+        setNotice({
+          text: "Something went wrong — please try again.",
+          kind: "error",
+        });
+      }
+      return;
+    }
+
+    // Session cookie is set — go to the dashboard and let the server re-read it.
+    router.replace("/dashboard");
+    router.refresh();
+  }
+
+  function handleGoogle() {
+    setNotice({ text: "Google login coming soon.", kind: "info" });
   }
 
   const showEntrance = !reduced;
@@ -237,9 +265,13 @@ export default function LoginForm() {
           {notice && (
             <p
               role="status"
-              className="rounded-xl bg-indigo-50 px-4 py-3 text-center text-sm font-medium text-indigo-700"
+              className={`rounded-xl px-4 py-3 text-center text-sm font-medium ${
+                notice.kind === "error"
+                  ? "bg-red-50 text-red-600"
+                  : "bg-indigo-50 text-indigo-700"
+              }`}
             >
-              {notice}
+              {notice.text}
             </p>
           )}
         </form>
@@ -254,6 +286,7 @@ export default function LoginForm() {
         {/* Google */}
         <button
           type="button"
+          onClick={handleGoogle}
           className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
         >
           <GoogleIcon />

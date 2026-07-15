@@ -2,8 +2,10 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, UserRound } from "lucide-react";
 import Logo from "@/components/Logo";
+import { supabase } from "@/lib/supabase";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -46,9 +48,14 @@ export default function SignupForm() {
     password?: string;
   }>({});
   const [submitting, setSubmitting] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<{
+    text: string;
+    kind: "info" | "error";
+    withLoginLink?: boolean;
+  } | null>(null);
   const [mounted, setMounted] = useState(false);
   const [reduced, setReduced] = useState(false);
+  const router = useRouter();
 
   // Entrance animation gating
   useEffect(() => {
@@ -73,19 +80,65 @@ export default function SignupForm() {
     return next;
   }
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setNotice("");
+    setNotice(null);
     const next = validate();
     setErrors(next);
     if (Object.keys(next).length > 0) return;
 
     setSubmitting(true);
-    // Front-end preview only — no real auth, no redirect.
-    setTimeout(() => {
-      setSubmitting(false);
-      setNotice("Auth coming soon — this is a preview.");
-    }, 1000);
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password,
+      options: { data: { full_name: name.trim() } },
+    });
+    setSubmitting(false);
+
+    if (error) {
+      if (/already registered|already exists/i.test(error.message)) {
+        setNotice({
+          text: "That email is already registered.",
+          kind: "info",
+          withLoginLink: true,
+        });
+      } else {
+        setNotice({
+          text: "Something went wrong — please try again.",
+          kind: "error",
+        });
+      }
+      return;
+    }
+
+    // With email confirmation ON, Supabase returns an obfuscated user with an
+    // empty identities array for an already-registered email (prevents
+    // enumeration). Treat it as "already registered" without confirming so.
+    if (data.user && data.user.identities?.length === 0) {
+      setNotice({
+        text: "That email is already registered.",
+        kind: "info",
+        withLoginLink: true,
+      });
+      return;
+    }
+
+    // Confirmations off → session is issued immediately, so go to the dashboard.
+    if (data.session) {
+      router.replace("/dashboard");
+      router.refresh();
+      return;
+    }
+
+    // Confirmations on → verification email sent.
+    setNotice({
+      text: "Check your inbox to confirm your account.",
+      kind: "info",
+    });
+  }
+
+  function handleGoogle() {
+    setNotice({ text: "Google login coming soon.", kind: "info" });
   }
 
   const showEntrance = !reduced;
@@ -274,9 +327,25 @@ export default function SignupForm() {
           {notice && (
             <p
               role="status"
-              className="rounded-xl bg-indigo-50 px-4 py-3 text-center text-sm font-medium text-indigo-700"
+              className={`rounded-xl px-4 py-3 text-center text-sm font-medium ${
+                notice.kind === "error"
+                  ? "bg-red-50 text-red-600"
+                  : "bg-indigo-50 text-indigo-700"
+              }`}
             >
-              {notice}
+              {notice.text}
+              {notice.withLoginLink && (
+                <>
+                  {" "}
+                  <Link
+                    href="/login"
+                    className="font-semibold underline underline-offset-2 hover:text-indigo-800"
+                  >
+                    Log in instead
+                  </Link>
+                  .
+                </>
+              )}
             </p>
           )}
         </form>
@@ -291,6 +360,7 @@ export default function SignupForm() {
         {/* Google */}
         <button
           type="button"
+          onClick={handleGoogle}
           className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
         >
           <GoogleIcon />

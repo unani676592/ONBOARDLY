@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { ArrowRight, Check } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -9,14 +10,31 @@ export default function FinalCTA() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!EMAIL_RE.test(email.trim())) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(cleanEmail)) {
       setError("Please enter a valid email address.");
       return;
     }
     setError("");
+    setLoading(true);
+
+    const { error: insertError } = await supabase
+      .from("waitlist")
+      .insert({ email: cleanEmail });
+
+    setLoading(false);
+
+    // 23505 = unique_violation. The email is already on the list — treat as
+    // success without revealing that it already existed.
+    if (insertError && insertError.code !== "23505") {
+      setError("Something went wrong — please try again.");
+      return;
+    }
+
     setSubmitted(true);
   }
 
@@ -83,9 +101,10 @@ export default function FinalCTA() {
               </div>
               <button
                 type="submit"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-6 py-3.5 text-base font-semibold text-indigo-700 shadow-sm transition-colors hover:bg-indigo-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-600"
+                disabled={loading}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-6 py-3.5 text-base font-semibold text-indigo-700 shadow-sm transition-colors hover:bg-indigo-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-600 disabled:cursor-not-allowed disabled:opacity-70"
               >
-                Get early access
+                {loading ? "Joining…" : "Get early access"}
                 <ArrowRight className="h-5 w-5" />
               </button>
             </form>
