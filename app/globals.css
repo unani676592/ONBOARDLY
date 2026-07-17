@@ -17,9 +17,43 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Respect users who prefer reduced motion for anchor scrolling */
+/* App-shell entrance animations (dialogs, dropdowns). */
+@keyframes onboardly-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes onboardly-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: onboardly-fade-in 0.15s ease-out;
+}
+
+.animate-pop-in {
+  animation: onboardly-pop-in 0.18s ease-out;
+}
+
+/* Respect users who prefer reduced motion for anchor scrolling and UI motion */
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  .animate-fade-in,
+  .animate-pop-in {
+    animation: none;
   }
 }

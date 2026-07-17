@@ -34,8 +34,23 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // Protect the dashboard: no session → send to login.
-  if (!user && pathname.startsWith("/dashboard")) {
+  // Protected app routes (the authenticated shell). Kept in sync with the
+  // (app) route group.
+  const PROTECTED = [
+    "/dashboard",
+    "/clients",
+    "/templates",
+    "/automations",
+    "/tasks",
+    "/integrations",
+    "/settings",
+  ];
+  const isProtected = PROTECTED.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+
+  // Protect the app: no session → send to login.
+  if (!user && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
@@ -52,5 +67,15 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login", "/signup"],
+  matcher: [
+    "/dashboard/:path*",
+    "/clients/:path*",
+    "/templates/:path*",
+    "/automations/:path*",
+    "/tasks/:path*",
+    "/integrations/:path*",
+    "/settings/:path*",
+    "/login",
+    "/signup",
+  ],
 };
