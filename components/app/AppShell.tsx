@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Sidebar from "@/components/app/Sidebar";
 import TopBar from "@/components/app/TopBar";
 import InviteClientModal from "@/components/app/InviteClientModal";
 import SettingsModal from "@/components/app/settings/SettingsModal";
+import Toast from "@/components/app/Toast";
 import { InviteContext } from "@/components/app/invite-context";
 
 export default function AppShell({
@@ -16,13 +17,24 @@ export default function AppShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const inviteCtx = useMemo(
     () => ({ open: () => setInviteOpen(true) }),
     [],
   );
+
+  // A client was added: close the modal, re-fetch the server components
+  // (dashboard stats/list, clients table) so the UI reflects it without a
+  // manual refresh, and confirm with a toast.
+  const handleClientAdded = useCallback(() => {
+    setInviteOpen(false);
+    router.refresh();
+    setToast("Client added");
+  }, [router]);
 
   const closeMobile = useCallback(() => setMobileOpen(false), []);
 
@@ -71,8 +83,15 @@ export default function AppShell({
         </div>
       </div>
 
-      <InviteClientModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
+      <InviteClientModal
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        onSuccess={handleClientAdded}
+      />
       <SettingsModal />
+      {toast && (
+        <Toast key={toast} message={toast} onDone={() => setToast(null)} />
+      )}
     </InviteContext.Provider>
   );
 }

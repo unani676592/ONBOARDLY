@@ -1,22 +1,26 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { ArrowRight, Mail, User, X } from "lucide-react";
+import { ArrowRight, Loader2, Mail, User, X } from "lucide-react";
 import Dialog from "@/components/app/Dialog";
+import { supabase } from "@/lib/supabase";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function InviteClientModal({
   open,
   onClose,
+  onSuccess,
 }: {
   open: boolean;
   onClose: () => void;
+  onSuccess: () => void;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [errors, setErrors] = useState<{ name?: string; email?: string }>({});
-  const [sent, setSent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Reset the form each time the modal is opened afresh.
   useEffect(() => {
@@ -24,7 +28,8 @@ export default function InviteClientModal({
       setName("");
       setEmail("");
       setErrors({});
-      setSent(false);
+      setFormError(null);
+      setSubmitting(false);
     }
   }, [open]);
 
@@ -35,14 +40,46 @@ export default function InviteClientModal({
     return next;
   }
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setFormError(null);
     const next = validate();
     setErrors(next);
     if (Object.keys(next).length > 0) return;
-    // No account is created and no email is sent — the clients table is the
-    // next phase. We only surface an honest "coming soon" notice.
-    setSent(true);
+
+    setSubmitting(true);
+
+    // Derive user_id from the session — never trust a client-supplied value.
+    // (RLS also enforces user_id = auth.uid() on insert.)
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setSubmitting(false);
+      setFormError("Your session expired — please log in again.");
+      return;
+    }
+
+    const { error } = await supabase.from("clients").insert({
+      user_id: user.id,
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      status: "invited",
+    });
+
+    setSubmitting(false);
+
+    if (error) {
+      // 23505 = unique_violation on (user_id, email).
+      if (error.code === "23505") {
+        setErrors({ email: "You've already added this client." });
+      } else {
+        setFormError("Something went wrong — please try again.");
+      }
+      return;
+    }
+
+    onSuccess();
   }
 
   return (
@@ -61,7 +98,7 @@ export default function InviteClientModal({
             Invite a client
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Send a magic-link onboarding invite — no account needed on their end.
+            Add a client to start tracking their onboarding.
           </p>
         </div>
         <button
@@ -150,20 +187,35 @@ export default function InviteClientModal({
 
         <button
           type="submit"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-indigo-600/30 transition-colors hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          disabled={submitting}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-indigo-600/30 transition-colors hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          Send invite
-          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          {submitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Adding…
+            </>
+          ) : (
+            <>
+              Add client
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </>
+          )}
         </button>
 
-        {sent && (
+        {formError && (
           <p
-            role="status"
-            className="rounded-xl bg-indigo-50 px-4 py-3 text-center text-sm font-medium text-indigo-700"
+            role="alert"
+            className="rounded-xl bg-red-50 px-4 py-3 text-center text-sm font-medium text-red-600"
           >
-            Client invitations activate in the next update — coming very soon.
+            {formError}
           </p>
         )}
+
+        <p className="text-center text-xs leading-relaxed text-slate-400">
+          Invite emails go out automatically once magic links launch — for now,
+          clients are tracked here.
+        </p>
       </form>
     </Dialog>
   );

@@ -8,9 +8,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import InviteTrigger from "@/components/app/InviteTrigger";
-import { getClientStats } from "@/lib/clients";
+import StatusBadge from "@/components/app/clients/StatusBadge";
+import { getClientStats, getRecentClients } from "@/lib/clientQueries";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
-import { firstNameFor, fullNameOf } from "@/lib/user";
+import { relativeTime } from "@/lib/time";
+import { firstNameFor, fullNameOf, initialsFor } from "@/lib/user";
 
 export const metadata = {
   title: "Dashboard — Onboardly",
@@ -49,7 +51,10 @@ export default async function DashboardPage() {
   const email = user?.email ?? "";
   const firstName = firstNameFor(fullNameOf(user), email);
 
-  const stats = await getClientStats();
+  const [stats, recentClients] = await Promise.all([
+    getClientStats(),
+    getRecentClients(5),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -89,20 +94,44 @@ export default async function DashboardPage() {
           </Link>
         </div>
 
-        {/* Empty state */}
-        <div className="flex flex-col items-center px-4 py-12 text-center">
-          <span className="grid h-20 w-20 place-items-center rounded-full bg-indigo-50 text-indigo-600">
-            <UserPlus className="h-9 w-9" aria-hidden="true" />
-          </span>
-          <h4 className="mt-6 text-lg font-bold tracking-tight text-slate-900">
-            No clients yet
-          </h4>
-          <p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-500">
-            Invite your first client — their onboarding runs on autopilot from
-            there.
-          </p>
-          <InviteTrigger label="Invite your first client" className="mt-6" />
-        </div>
+        {recentClients.length === 0 ? (
+          /* Empty state — only when the agency has zero clients. */
+          <div className="flex flex-col items-center px-4 py-12 text-center">
+            <span className="grid h-20 w-20 place-items-center rounded-full bg-indigo-50 text-indigo-600">
+              <UserPlus className="h-9 w-9" aria-hidden="true" />
+            </span>
+            <h4 className="mt-6 text-lg font-bold tracking-tight text-slate-900">
+              No clients yet
+            </h4>
+            <p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-500">
+              Invite your first client — their onboarding runs on autopilot from
+              there.
+            </p>
+            <InviteTrigger label="Invite your first client" className="mt-6" />
+          </div>
+        ) : (
+          <ul className="mt-4 divide-y divide-slate-100">
+            {recentClients.map((client) => (
+              <li key={client.id} className="flex items-center gap-4 py-4">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">
+                  {initialsFor(client.name, client.email)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-slate-900">
+                    {client.name}
+                  </p>
+                  <p className="truncate text-sm text-slate-500">
+                    {client.email}
+                  </p>
+                </div>
+                <StatusBadge status={client.status} />
+                <span className="hidden shrink-0 text-sm text-slate-400 sm:block">
+                  {relativeTime(client.created_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );
