@@ -1,13 +1,15 @@
 import type { User } from "@supabase/supabase-js";
 
 // Deriving what we show for the signed-in user. Order of truth:
-//   1. full_name from Supabase user metadata (set at signup)
-//   2. the email prefix (before the "@") — a REAL value, never invented
+//   1. full_name from Supabase user metadata (set at email/password signup)
+//   2. name from user metadata (Google OAuth uses this shape)
+//   3. the email prefix (before the "@") — a REAL value, never invented
 // We never fabricate a placeholder name.
 
 export function fullNameOf(user: User | null): string | null {
-  const value = user?.user_metadata?.full_name;
-  const trimmed = typeof value === "string" ? value.trim() : "";
+  const meta = user?.user_metadata;
+  const candidate = meta?.full_name ?? meta?.name;
+  const trimmed = typeof candidate === "string" ? candidate.trim() : "";
   return trimmed.length > 0 ? trimmed : null;
 }
 

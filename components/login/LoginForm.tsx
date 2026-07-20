@@ -45,6 +45,7 @@ export default function LoginForm() {
     {},
   );
   const [submitting, setSubmitting] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [notice, setNotice] = useState<{
     text: string;
     kind: "info" | "error";
@@ -106,8 +107,24 @@ export default function LoginForm() {
     router.refresh();
   }
 
-  function handleGoogle() {
-    setNotice({ text: "Google login coming soon.", kind: "info" });
+  async function handleGoogle() {
+    setNotice(null);
+    setGoogleLoading(true);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+      },
+    });
+    // On success the browser is redirecting to Google, so we keep the loading
+    // state. Only reset it if the redirect never started.
+    if (error) {
+      setGoogleLoading(false);
+      setNotice({
+        text: "Couldn't start Google sign-in — please try again.",
+        kind: "error",
+      });
+    }
   }
 
   const showEntrance = !reduced;
@@ -287,10 +304,20 @@ export default function LoginForm() {
         <button
           type="button"
           onClick={handleGoogle}
-          className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          disabled={googleLoading}
+          className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          <GoogleIcon />
-          Continue with Google
+          {googleLoading ? (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              Redirecting to Google…
+            </>
+          ) : (
+            <>
+              <GoogleIcon />
+              Continue with Google
+            </>
+          )}
         </button>
       </div>
 

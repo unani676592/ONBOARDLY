@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { fullNameOf } from "@/lib/user";
 import GeneralTab from "@/components/app/settings/GeneralTab";
 import AccountTab from "@/components/app/settings/AccountTab";
 import BillingTab from "@/components/app/settings/BillingTab";
@@ -35,7 +36,9 @@ export default function SettingsModal() {
       const u = data.user;
       setUser({
         email: u.email ?? "",
-        fullName: (u.user_metadata?.full_name as string) ?? "",
+        // full_name, else Google's name — never invented. Agency/work stay
+        // empty for Google users until they fill them in on the General tab.
+        fullName: fullNameOf(u) ?? "",
         agencyName: (u.user_metadata?.agency_name as string) ?? "",
         workType: (u.user_metadata?.work_type as string) ?? "",
       });
