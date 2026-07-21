@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, Search, Trash2, UserPlus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link2, Loader2, Search, Trash2, UserPlus } from "lucide-react";
 import Dialog from "@/components/app/Dialog";
 import InviteTrigger from "@/components/app/InviteTrigger";
+import Toast from "@/components/app/Toast";
+import ClientDetailDrawer from "@/components/app/clients/ClientDetailDrawer";
 import { STATUS_META } from "@/components/app/clients/StatusBadge";
 import {
   CLIENT_STATUSES,
@@ -24,6 +26,8 @@ export default function ClientsTable({
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<Client | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [detailClient, setDetailClient] = useState<Client | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   // Re-sync when the server re-fetches (e.g. after a client is added via the
   // shell's invite modal, which calls router.refresh()).
@@ -44,6 +48,31 @@ export default function ClientsTable({
     setError(message);
     window.setTimeout(() => setError(null), 3000);
   }
+
+  // Copy a client's magic link (origin + /onboard/[token]) to the clipboard.
+  // Uses the async Clipboard API where available, with a legacy fallback for
+  // non-secure contexts (e.g. plain http on a LAN IP).
+  const copyLink = useCallback(async (client: Client) => {
+    const url = `${window.location.origin}/onboard/${client.token}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const el = document.createElement("textarea");
+        el.value = url;
+        el.style.position = "fixed";
+        el.style.opacity = "0";
+        document.body.appendChild(el);
+        el.focus();
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      }
+      setToast("Copied ✓");
+    } catch {
+      flashError("Couldn't copy the link — please try again.");
+    }
+  }, []);
 
   async function changeStatus(client: Client, status: ClientStatus) {
     if (status === client.status) return;
@@ -169,19 +198,34 @@ export default function ClientsTable({
                 filtered.map((client) => (
                   <tr key={client.id} className="hover:bg-slate-50/60">
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">
+                      <button
+                        type="button"
+                        onClick={() => setDetailClient(client)}
+                        className="flex items-center gap-3 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+                      >
+                        <span className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">
                           {initialsFor(client.name, client.email)}
+                          {client.submitted_at && (
+                            <span
+                              className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500"
+                              aria-hidden="true"
+                            />
+                          )}
                         </span>
                         <div className="min-w-0">
-                          <p className="truncate font-semibold text-slate-900">
+                          <p className="flex items-center gap-1.5 truncate font-semibold text-slate-900">
                             {client.name}
+                            {client.submitted_at && (
+                              <span className="text-xs font-medium text-emerald-600">
+                                · Submitted
+                              </span>
+                            )}
                           </p>
                           <p className="truncate text-slate-500">
                             {client.email}
                           </p>
                         </div>
-                      </div>
+                      </button>
                     </td>
                     <td className="px-6 py-4">
                       <label className="sr-only" htmlFor={`status-${client.id}`}>
@@ -205,15 +249,25 @@ export default function ClientsTable({
                     <td className="px-6 py-4 text-slate-500">
                       {formatDate(client.created_at)}
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setConfirming(client)}
-                        aria-label={`Remove ${client.name}`}
-                        className="inline-grid h-9 w-9 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      </button>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => copyLink(client)}
+                          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                        >
+                          <Link2 className="h-4 w-4" aria-hidden="true" />
+                          Copy link
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirming(client)}
+                          aria-label={`Remove ${client.name}`}
+                          className="inline-grid h-9 w-9 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -263,6 +317,19 @@ export default function ClientsTable({
             </button>
           </div>
         </Dialog>
+      )}
+
+      {/* Client detail drawer */}
+      {detailClient && (
+        <ClientDetailDrawer
+          client={detailClient}
+          onClose={() => setDetailClient(null)}
+          onCopyLink={copyLink}
+        />
+      )}
+
+      {toast && (
+        <Toast key={toast} message={toast} onDone={() => setToast(null)} />
       )}
     </div>
   );
