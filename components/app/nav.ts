@@ -21,7 +21,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Clients", href: "/clients", icon: Users },
   { label: "Templates", href: "/templates", icon: FileText, soon: true },
-  { label: "Automations", href: "/automations", icon: Workflow, soon: true },
+  { label: "Automations", href: "/automations", icon: Workflow },
   { label: "Tasks", href: "/tasks", icon: SquareCheckBig, soon: true },
   { label: "Integrations", href: "/integrations", icon: Zap, soon: true },
   { label: "Settings", href: "/settings", icon: Settings },
