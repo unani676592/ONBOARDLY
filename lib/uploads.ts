@@ -43,6 +43,26 @@ export function fileExt(name: string): string {
   return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
 }
 
+// One uploaded file as the agency-side drawer needs it: a friendly display
+// name, its size in bytes, when it landed, and a short-lived signed download
+// URL (the bucket is private, so there are no public URLs). Client-safe — the
+// URL is minted server-side in lib/clientFiles.ts.
+export type ClientFile = {
+  name: string;
+  size: number;
+  uploadedAt: string;
+  url: string;
+};
+
+// The intake route stores objects as `${Date.now()}-${rand6}-${safeName}` to
+// guarantee uniqueness (see safeObjectName). Strip that prefix so the agency
+// sees the original-ish filename the client uploaded. Falls back to the raw
+// object name if it doesn't match the expected shape.
+export function displayFileName(objectName: string): string {
+  const match = objectName.match(/^\d+-[a-z0-9]{6}-(.+)$/);
+  return match ? match[1]! : objectName;
+}
+
 function isAllowedType(file: { name: string; type: string }): boolean {
   const extOk = (ALLOWED_EXT as readonly string[]).includes(fileExt(file.name));
   // Some browsers report an empty type for valid files; allow that as long as

@@ -35,6 +35,47 @@ export default function ClientsTable({
     setClients(initialClients);
   }, [initialClients]);
 
+  // Live updates: a single RLS-scoped realtime channel on the clients table.
+  // Realtime applies the signed-in agency's SELECT policy, so we only receive
+  // events for our own clients (needs REPLICA IDENTITY FULL for the old row on
+  // UPDATE/DELETE). One channel, torn down on unmount — no duplicates across
+  // re-renders or React StrictMode's double-invoke. If the socket never
+  // connects or drops, the table simply stops receiving pushes; local edits and
+  // manual refresh keep working, so nothing goes stale-forever or crashes.
+  useEffect(() => {
+    const channel = supabase
+      .channel("clients-table")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "clients" },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            const row = payload.new as Client;
+            setClients((list) =>
+              // Dedupe: an invite can arrive here and via router.refresh().
+              list.some((c) => c.id === row.id) ? list : [row, ...list],
+            );
+          } else if (payload.eventType === "UPDATE") {
+            const row = payload.new as Client;
+            // Merge in place so the status badge, dropdown value, and Submitted
+            // tag all reflect the authoritative row (also reconciles our own
+            // optimistic status edits).
+            setClients((list) =>
+              list.map((c) => (c.id === row.id ? { ...c, ...row } : c)),
+            );
+          } else if (payload.eventType === "DELETE") {
+            const old = payload.old as Partial<Client>;
+            setClients((list) => list.filter((c) => c.id !== old.id));
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return clients;

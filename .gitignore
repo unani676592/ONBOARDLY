@@ -41,4 +41,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.dev.log
+# local dev server log — may contain magic-link tokens / uids, never commit
+dev.log

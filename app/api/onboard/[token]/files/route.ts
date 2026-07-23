@@ -4,6 +4,7 @@ import {
   storeClientFile,
   type StoreResult,
 } from "@/lib/onboardUploads";
+import { markClientOnboarded } from "@/lib/onboard";
 import { MAX_FILES } from "@/lib/uploads";
 
 // Public intake file-upload endpoint. Validates the per-client token first,
@@ -76,6 +77,14 @@ export async function POST(req: Request, { params }: RouteContext) {
   const results: StoreResult[] = [];
   for (const file of files) {
     results.push(await storeClientFile(target, file));
+  }
+
+  // Once at least one file is actually stored, advance the client to
+  // 'onboarded' (from 'files_pending' only — see markClientOnboarded). This is
+  // the sole place that status is set, so 'onboarded' always means a real file
+  // exists. Best-effort: a failure here never blocks the upload response.
+  if (results.some((r) => r.ok)) {
+    await markClientOnboarded(token);
   }
 
   // Always 200 with a per-file result array — partial failures are normal and

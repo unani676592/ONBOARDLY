@@ -7,6 +7,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import DashboardRealtime from "@/components/app/DashboardRealtime";
 import InviteTrigger from "@/components/app/InviteTrigger";
 import StatusBadge from "@/components/app/clients/StatusBadge";
 import { getClientStats, getRecentClients } from "@/lib/clientQueries";
@@ -58,6 +59,9 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* Live updates: soft-refreshes stats + Recent Clients on any change. */}
+      <DashboardRealtime />
+
       {/* Greeting */}
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-slate-900">
