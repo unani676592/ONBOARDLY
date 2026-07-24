@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link2, Loader2, Search, Trash2, UserPlus } from "lucide-react";
+import { Link2, Loader2, Search, Send, Trash2, UserPlus } from "lucide-react";
 import Dialog from "@/components/app/Dialog";
 import InviteTrigger from "@/components/app/InviteTrigger";
 import Toast from "@/components/app/Toast";
@@ -13,7 +13,7 @@ import {
   type ClientStatus,
 } from "@/lib/clients";
 import { supabase } from "@/lib/supabase";
-import { formatDate } from "@/lib/time";
+import { formatDate, relativeTime } from "@/lib/time";
 import { initialsFor } from "@/lib/user";
 
 export default function ClientsTable({
@@ -28,6 +28,7 @@ export default function ClientsTable({
   const [deleting, setDeleting] = useState(false);
   const [detailClient, setDetailClient] = useState<Client | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   // Re-sync when the server re-fetches (e.g. after a client is added via the
   // shell's invite modal, which calls router.refresh()).
@@ -140,6 +141,34 @@ export default function ClientsTable({
         ),
       );
       flashError("Couldn't update status — please try again.");
+    }
+  }
+
+  // Manual resend: an explicit owner action, so it always sends (no draft
+  // gate). On success the server stamps invite_sent_at, which arrives via the
+  // realtime UPDATE and refreshes the "Invite sent" line.
+  async function resendInvite(client: Client) {
+    setResendingId(client.id);
+    try {
+      const res = await fetch(`/api/clients/${client.id}/send-invite`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ trigger: "manual-resend" }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.status === "sent") {
+        setToast("Invite sent ✓");
+      } else {
+        flashError(
+          `Couldn't send: ${body.reason ?? body.error ?? `HTTP ${res.status}`}`,
+        );
+      }
+    } catch (err) {
+      flashError(
+        `Couldn't send: ${err instanceof Error ? err.message : "network error"}`,
+      );
+    } finally {
+      setResendingId(null);
     }
   }
 
@@ -265,6 +294,11 @@ export default function ClientsTable({
                           <p className="truncate text-slate-500">
                             {client.email}
                           </p>
+                          {client.invite_sent_at && (
+                            <p className="truncate text-xs text-slate-400">
+                              Invite sent {relativeTime(client.invite_sent_at)}
+                            </p>
+                          )}
                         </div>
                       </button>
                     </td>
@@ -292,6 +326,19 @@ export default function ClientsTable({
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => resendInvite(client)}
+                          disabled={resendingId === client.id}
+                          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {resendingId === client.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Send className="h-4 w-4" aria-hidden="true" />
+                          )}
+                          {client.invite_sent_at ? "Resend" : "Send invite"}
+                        </button>
                         <button
                           type="button"
                           onClick={() => copyLink(client)}

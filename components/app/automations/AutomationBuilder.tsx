@@ -5,7 +5,6 @@ import "@xyflow/react/dist/style.css";
 import { useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import {
-  Activity,
   AlertCircle,
   Check,
   Info,
@@ -14,6 +13,7 @@ import {
   Save,
 } from "lucide-react";
 import WorkflowEditor from "./WorkflowEditor";
+import ActivityTab from "./ActivityTab";
 import { useWorkflowState } from "./useWorkflowState";
 
 type Tab = "workflow" | "activity";
@@ -91,20 +91,7 @@ export default function AutomationBuilder() {
           </ReactFlowProvider>
         </div>
       ) : (
-        <div className="mt-5 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-white">
-          <div className="flex flex-col items-center px-6 py-20 text-center">
-            <span className="grid h-14 w-14 place-items-center rounded-full bg-slate-100 text-slate-400">
-              <Activity className="h-7 w-7" aria-hidden="true" />
-            </span>
-            <h3 className="mt-5 text-base font-bold tracking-tight text-slate-900">
-              No activity yet
-            </h3>
-            <p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-500">
-              Once this automation runs, each execution will show up here with its
-              status and timestamp.
-            </p>
-          </div>
-        </div>
+        <ActivityTab />
       )}
     </div>
   );
@@ -211,7 +198,7 @@ function StatusToggle({
         />
       </button>
       <span
-        title="Enabling saves the status, but automations don't run automatically yet — that's a later step."
+        title="When enabled, inviting a client automatically emails them their invite. In Draft, no invite emails are sent."
         className="grid h-5 w-5 place-items-center text-slate-400"
       >
         <Info className="h-4 w-4" aria-hidden="true" />

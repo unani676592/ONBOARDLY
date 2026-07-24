@@ -25,6 +25,9 @@ export type Client = {
   // completes their form.
   token: string;
   submitted_at: string | null;
+  // Set when the invite email was last sent (auto on invite, or manual resend);
+  // null if it has never been sent.
+  invite_sent_at: string | null;
 };
 
 export type ClientStats = {
