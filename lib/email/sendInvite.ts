@@ -3,9 +3,10 @@ import { fullNameOf } from "@/lib/user";
 import { EMAIL_FROM } from "@/lib/email/config";
 import { getResend } from "@/lib/email/resend";
 import { buildInviteEmail } from "@/lib/email/inviteEmail";
-import type { RunTrigger } from "@/lib/automationRuns";
 
-// Server-only: send one client their invite email and record the attempt.
+// Server-only: send one client their invite email and stamp invite_sent_at.
+// The caller records the activity run (see logActionRun); this function is
+// purely the send + stamp.
 //
 // SECURITY: runs through the RLS-scoped anon server client (the signed-in
 // agency's cookie session). The clients row only resolves if it belongs to this
@@ -19,7 +20,6 @@ export type SendInviteResult =
 export async function sendInviteEmail(
   clientId: string,
   baseUrl: string,
-  trigger: RunTrigger,
 ): Promise<SendInviteResult> {
   const supabase = await createSupabaseServerClient();
 
@@ -79,18 +79,9 @@ export async function sendInviteEmail(
     result = { ok: false, status: 502, reason };
   }
 
-  // Record the attempt (best-effort — a logging failure never changes the real
-  // email outcome we report to the caller).
-  const { error: runError } = await supabase.from("automation_runs").insert({
-    user_id: user.id,
-    client_id: clientId,
-    client_name: client.name ?? "",
-    client_email: client.email,
-    trigger,
-    status: result.ok ? "sent" : "failed",
-    error: result.ok ? null : result.reason,
-  });
-  if (runError) console.error("sendInviteEmail run log:", runError.message);
+  // Note: activity logging is the engine's job now (per-action). This function
+  // just sends + stamps; callers (the engine's send-email action, and the
+  // manual-resend route) record the run via logActionRun.
 
   // Stamp last-sent only on a real success.
   if (result.ok) {

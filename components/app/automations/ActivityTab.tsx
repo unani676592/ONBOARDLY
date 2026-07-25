@@ -1,14 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, AlertCircle, CheckCircle2, Loader2, XCircle } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  MinusCircle,
+  XCircle,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { relativeTime } from "@/lib/time";
-import { TRIGGER_LABELS, type AutomationRun } from "@/lib/automationRuns";
+import {
+  ACTION_SUBTYPE_LABELS,
+  TRIGGER_LABELS,
+  type AutomationRun,
+  type RunStatus,
+} from "@/lib/automationRuns";
 
-// Real run history for the automation. Reads automation_runs (RLS-scoped to the
-// signed-in agency) on mount. No fabricated rows — an empty table shows the
-// honest empty state.
+// Real per-action run history for the automation. Reads automation_runs (RLS-
+// scoped to the signed-in agency) on mount, most recent first. No fabricated
+// rows — an empty table shows the honest empty state.
 export default function ActivityTab() {
   const [runs, setRuns] = useState<AutomationRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,8 +85,8 @@ export default function ActivityTab() {
             No activity yet
           </h3>
           <p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-500">
-            When your automation runs, each invite email shows up here — sent or
-            failed, with the reason.
+            When your automation runs, each action shows up here — the client, what
+            ran, and the outcome with its reason.
           </p>
         </div>
       </Shell>
@@ -84,45 +96,103 @@ export default function ActivityTab() {
   return (
     <Shell>
       <ul className="divide-y divide-slate-100">
-        {runs.map((run) => {
-          const sent = run.status === "sent";
-          return (
-            <li key={run.id} className="flex items-start gap-3 px-5 py-4">
-              <span
-                className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full ${
-                  sent ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
-                }`}
-              >
-                {sent ? (
-                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                ) : (
-                  <XCircle className="h-4 w-4" aria-hidden="true" />
-                )}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <p className="truncate text-sm font-semibold text-slate-900">
-                    {run.client_name}
-                  </p>
-                  <span className="text-xs text-slate-400">{run.client_email}</span>
-                </div>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  <span className={sent ? "text-emerald-600" : "text-rose-600"}>
-                    {sent ? "Invite sent" : "Invite failed"}
-                  </span>{" "}
-                  · {TRIGGER_LABELS[run.trigger]} · {relativeTime(run.created_at)}
-                </p>
-                {!sent && run.error && (
-                  <p className="mt-1 rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs leading-relaxed text-rose-600">
-                    {run.error}
-                  </p>
-                )}
-              </div>
-            </li>
-          );
-        })}
+        {runs.map((run) => (
+          <RunRow key={run.id} run={run} />
+        ))}
       </ul>
     </Shell>
+  );
+}
+
+// --- One activity row -------------------------------------------------------
+
+type Tone = "success" | "failed" | "skipped";
+
+function toneOf(status: RunStatus): Tone {
+  if (status === "ran" || status === "sent") return "success";
+  if (status === "skipped") return "skipped";
+  return "failed";
+}
+
+// Legacy invite rows (pre-engine) have a null subtype and were always emails.
+function actionLabelOf(run: AutomationRun): string {
+  if (!run.action_subtype) return "Send email";
+  return ACTION_SUBTYPE_LABELS[run.action_subtype] ?? run.action_subtype;
+}
+
+function statusWordOf(run: AutomationRun, tone: Tone): string {
+  const isEmail = !run.action_subtype || run.action_subtype === "send-email";
+  if (tone === "success") return isEmail ? "Sent" : "Ran";
+  if (tone === "failed") return "Failed";
+  return "Skipped";
+}
+
+const TONE_STYLES: Record<
+  Tone,
+  { badge: string; word: string; reason: string }
+> = {
+  success: {
+    badge: "bg-emerald-50 text-emerald-600",
+    word: "text-emerald-600",
+    reason: "",
+  },
+  failed: {
+    badge: "bg-rose-50 text-rose-600",
+    word: "text-rose-600",
+    reason: "bg-rose-50 text-rose-600",
+  },
+  skipped: {
+    badge: "bg-slate-100 text-slate-500",
+    word: "text-slate-500",
+    reason: "bg-slate-50 text-slate-500",
+  },
+};
+
+function RunRow({ run }: { run: AutomationRun }) {
+  const tone = toneOf(run.status);
+  const styles = TONE_STYLES[tone];
+  const actionLabel = actionLabelOf(run);
+  const statusWord = statusWordOf(run, tone);
+  // "not implemented" reads more naturally as a sentence in the reason box.
+  const reason =
+    run.error === "not implemented" ? "Not implemented yet." : run.error;
+
+  return (
+    <li className="flex items-start gap-3 px-5 py-4">
+      <span
+        className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full ${styles.badge}`}
+      >
+        {tone === "success" ? (
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+        ) : tone === "failed" ? (
+          <XCircle className="h-4 w-4" aria-hidden="true" />
+        ) : (
+          <MinusCircle className="h-4 w-4" aria-hidden="true" />
+        )}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <p className="truncate text-sm font-semibold text-slate-900">
+            {run.client_name || "Unknown client"}
+          </p>
+          {run.client_email && (
+            <span className="text-xs text-slate-400">{run.client_email}</span>
+          )}
+        </div>
+        <p className="mt-0.5 text-xs text-slate-500">
+          <span className="font-medium text-slate-600">{actionLabel}</span> ·{" "}
+          <span className={styles.word}>{statusWord}</span> ·{" "}
+          {TRIGGER_LABELS[run.trigger]} · {relativeTime(run.created_at)}
+        </p>
+        {tone !== "success" && reason && (
+          <p
+            className={`mt-1 rounded-lg px-2.5 py-1.5 text-xs leading-relaxed ${styles.reason}`}
+          >
+            {reason}
+          </p>
+        )}
+      </div>
+    </li>
   );
 }
 

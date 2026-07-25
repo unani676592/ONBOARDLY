@@ -1,0 +1,23 @@
+import type { Subtype } from "@/components/app/automations/workflow-data";
+import type { WorkflowAction } from "@/lib/automation/types";
+import { sendEmailAction } from "@/lib/automation/actions/sendEmail";
+
+// The action registry: subtype → the action that handles it.
+//
+// The engine core knows nothing about specific actions — it only asks this
+// registry for a handler by node subtype. Adding a new action later means
+// registering it here (and writing its file); the engine never changes.
+// A subtype with no entry is treated as "not implemented" by the engine and
+// skipped — never faked, never errored.
+const registry = new Map<Subtype, WorkflowAction>();
+
+function register(action: WorkflowAction): void {
+  registry.set(action.id, action);
+}
+
+// Built-in actions. Today: just the invite email send.
+register(sendEmailAction);
+
+export function getAction(subtype: Subtype): WorkflowAction | undefined {
+  return registry.get(subtype);
+}
