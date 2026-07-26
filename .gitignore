@@ -42,7 +42,7 @@ yarn-error.log*
 next-env.d.ts
 
 # local dev server log — may contain magic-link tokens / uids, never commit
-Sdev.log
+dev.log
 
 # internal design doc — kept local, never pushed
 Onboardly-System-Design.md
