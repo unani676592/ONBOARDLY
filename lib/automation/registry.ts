@@ -1,6 +1,7 @@
 import type { Subtype } from "@/components/app/automations/workflow-data";
 import type { WorkflowAction } from "@/lib/automation/types";
 import { sendEmailAction } from "@/lib/automation/actions/sendEmail";
+import { addToNotionAction } from "@/lib/automation/actions/addToNotion";
 
 // The action registry: subtype → the action that handles it.
 //
@@ -15,8 +16,9 @@ function register(action: WorkflowAction): void {
   registry.set(action.id, action);
 }
 
-// Built-in actions. Today: just the invite email send.
+// Built-in actions: the invite email send, and the Notion record write.
 register(sendEmailAction);
+register(addToNotionAction);
 
 export function getAction(subtype: Subtype): WorkflowAction | undefined {
   return registry.get(subtype);

@@ -23,7 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Templates", href: "/templates", icon: FileText, soon: true },
   { label: "Automations", href: "/automations", icon: Workflow },
   { label: "Tasks", href: "/tasks", icon: SquareCheckBig, soon: true },
-  { label: "Integrations", href: "/integrations", icon: Zap, soon: true },
+  { label: "Integrations", href: "/integrations", icon: Zap },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 

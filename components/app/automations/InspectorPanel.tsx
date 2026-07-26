@@ -1,6 +1,16 @@
 "use client";
 
-import { Info, MousePointerClick, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ExternalLink,
+  Info,
+  Loader2,
+  MousePointerClick,
+  X,
+} from "lucide-react";
 import {
   ACCENTS,
   BLOCKS,
@@ -10,6 +20,7 @@ import {
   type WorkflowNode,
   type WorkflowNodeData,
 } from "./workflow-data";
+import type { NotionConnectionStatus } from "@/lib/notion/types";
 
 type Props = {
   node: WorkflowNode | null;
@@ -75,6 +86,8 @@ export default function InspectorPanel({ node, onChange, onClose }: Props) {
           <TriggerBody fires={def.fires} />
         ) : node.data.subtype === "send-email" ? (
           <SendEmailBody node={node} onChange={onChange} />
+        ) : node.data.subtype === "add-crm-record" ? (
+          <AddToNotionBody />
         ) : (
           <p className="text-sm text-slate-500">
             This block has no settings yet.
@@ -219,6 +232,92 @@ function SendEmailBody({
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
         UI only for now — these settings aren’t saved or sent yet.
       </p>
+    </>
+  );
+}
+
+// Connection-aware body for the "Add to Notion" action. The block is draggable
+// regardless, but it only does anything once Notion is connected — so we tell
+// the truth and, when disconnected, point the user to Integrations rather than
+// letting the node silently no-op at run time.
+function AddToNotionBody() {
+  const [status, setStatus] = useState<NotionConnectionStatus | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/integrations/notion");
+        const body = (await res.json()) as NotionConnectionStatus;
+        if (active) setStatus(body);
+      } catch {
+        if (active) setFailed(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return (
+    <>
+      <div>
+        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          What this does
+        </h4>
+        <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
+          Creates a row in your Notion database for each invited client — name,
+          email, status, and the invited date.
+        </p>
+      </div>
+
+      {status === null && !failed && (
+        <p className="flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          Checking your Notion connection…
+        </p>
+      )}
+
+      {failed && (
+        <p className="flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-500">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+          Couldn’t check your Notion connection right now.
+        </p>
+      )}
+
+      {status?.connected && (
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+          <p className="flex items-center gap-2 text-xs font-semibold text-emerald-700">
+            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+            Notion connected
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-emerald-700/80">
+            Rows are added to{" "}
+            <span className="font-semibold">
+              {status.databaseTitle || "your database"}
+            </span>
+            . It needs a title, an Email, a Status (Select), and a Date property.
+          </p>
+        </div>
+      )}
+
+      {status && !status.connected && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="flex items-start gap-2 text-xs leading-relaxed text-amber-700">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            Notion isn’t connected yet, so this step will be skipped when the
+            workflow runs. Connect it to start writing client records.
+          </p>
+          <Link
+            href="/integrations"
+            className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 shadow-sm ring-1 ring-amber-200 transition-colors hover:bg-amber-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+          >
+            Connect Notion
+            <ExternalLink className="h-3 w-3" aria-hidden="true" />
+          </Link>
+        </div>
+      )}
     </>
   );
 }
