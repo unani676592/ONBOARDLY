@@ -1,5 +1,6 @@
 import { FileText, HardDrive, Mail } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { checkConnection } from "@/lib/notion/api";
 import NotionCard from "@/components/app/integrations/NotionCard";
 import type { NotionConnectionStatus } from "@/lib/notion/types";
 
@@ -13,22 +14,29 @@ export default async function IntegrationsPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Read non-secret status server-side. If the row (or table, pre-migration)
-  // isn't there we simply show the not-connected state — never the token.
+  // Read status server-side. The token is read here only to re-verify liveness
+  // against Notion; it is never passed to the client — only the resulting
+  // `problem` reason is. If the row (or table, pre-migration) isn't there we
+  // show the not-connected state.
   let notion: NotionConnectionStatus = { connected: false };
   if (user) {
     const { data } = await supabase
       .from("notion_connections")
-      .select("database_id, database_title, workspace_name, connected_at")
+      .select("access_token, database_id, database_title, workspace_name, connected_at")
       .eq("user_id", user.id)
       .maybeSingle();
     if (data) {
+      // Re-verify: a revoked token / un-shared database shouldn't keep reading
+      // as healthy. Only a definitive failure flags a problem — a transient
+      // network issue leaves the connection shown as-is.
+      const check = await checkConnection(data.access_token, data.database_id);
       notion = {
         connected: true,
         databaseId: data.database_id,
         databaseTitle: data.database_title,
         workspaceName: data.workspace_name,
         connectedAt: data.connected_at,
+        problem: check.state === "invalid" ? check.reason : null,
       };
     }
   }

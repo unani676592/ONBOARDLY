@@ -142,6 +142,43 @@ export async function createClientRecord(
   }
 }
 
+// Re-verify a stored connection's liveness (used to keep the Integrations page
+// truthful — a revoked token or un-shared database shouldn't keep reading as
+// "Connected"). Distinguishes a definitive credential/permission failure from a
+// transient network blip so we never cry wolf on an unreachable Notion.
+export type ConnectionCheck =
+  | { state: "ok" }
+  | { state: "invalid"; reason: string }
+  | { state: "unreachable" };
+
+export async function checkConnection(
+  token: string,
+  databaseId: string,
+): Promise<ConnectionCheck> {
+  try {
+    const res = await notionFetch(token, `/v1/databases/${databaseId}`);
+    if (res.ok) return { state: "ok" };
+    if (res.status === 401) {
+      return {
+        state: "invalid",
+        reason:
+          "Notion no longer accepts the saved token — reconnect to keep writing client records.",
+      };
+    }
+    if (res.status === 404) {
+      return {
+        state: "invalid",
+        reason:
+          "The saved database is no longer shared with your integration — re-share it or reconnect.",
+      };
+    }
+    // Unexpected status — treat as transient, don't flag the connection broken.
+    return { state: "unreachable" };
+  } catch {
+    return { state: "unreachable" };
+  }
+}
+
 export type NotionValidation =
   | { ok: true; databaseTitle: string; workspaceName: string | null }
   | { ok: false; error: string };

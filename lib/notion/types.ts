@@ -7,4 +7,8 @@ export type NotionConnectionStatus = {
   databaseTitle?: string | null;
   workspaceName?: string | null;
   connectedAt?: string;
+  // Set when a stored connection was re-verified and is currently failing (e.g.
+  // token revoked, database un-shared). `connected` stays true (a row exists),
+  // but this carries the specific reason so the UI can tell the truth.
+  problem?: string | null;
 };

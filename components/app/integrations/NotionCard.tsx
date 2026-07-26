@@ -81,7 +81,7 @@ export default function NotionCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-bold tracking-tight text-slate-900">Notion</h2>
-            <StatusPill connected={status.connected} />
+            <StatusPill connected={status.connected} problem={!!status.problem} />
           </div>
           <p className="mt-1 text-sm leading-relaxed text-slate-500">
             Connect a Notion database so client records can be written to it.
@@ -90,21 +90,31 @@ export default function NotionCard({
       </div>
 
       <div className="px-6 py-5">
-        {status.connected ? (
+        {status.connected && !status.problem ? (
           <ConnectedState
             status={status}
             disconnecting={disconnecting}
             onDisconnect={handleDisconnect}
           />
         ) : (
-          <ConnectForm
-            token={token}
-            database={database}
-            connecting={connecting}
-            onToken={setToken}
-            onDatabase={setDatabase}
-            onSubmit={handleConnect}
-          />
+          <>
+            {status.connected && status.problem && (
+              <NeedsReconnect
+                reason={status.problem}
+                databaseTitle={status.databaseTitle}
+                disconnecting={disconnecting}
+                onDisconnect={handleDisconnect}
+              />
+            )}
+            <ConnectForm
+              token={token}
+              database={database}
+              connecting={connecting}
+              onToken={setToken}
+              onDatabase={setDatabase}
+              onSubmit={handleConnect}
+            />
+          </>
         )}
 
         {error && (
@@ -279,13 +289,73 @@ function NotionHelp() {
 
 // --- Bits ------------------------------------------------------------------
 
-function StatusPill({ connected }: { connected: boolean }) {
-  return connected ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-600">
-      <Check className="h-3 w-3" aria-hidden="true" />
-      Connected
-    </span>
-  ) : (
+// Shown when a stored connection re-verified as broken: names the real reason
+// and lets the user reconnect (the form below) or remove it. Not fake — the
+// connection genuinely won't write until re-established.
+function NeedsReconnect({
+  reason,
+  databaseTitle,
+  disconnecting,
+  onDisconnect,
+}: {
+  reason: string;
+  databaseTitle?: string | null;
+  disconnecting: boolean;
+  onDisconnect: () => void;
+}) {
+  return (
+    <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-amber-700">
+        <AlertCircle className="h-4 w-4" aria-hidden="true" />
+        Connection needs attention
+      </div>
+      <p className="mt-1.5 text-sm leading-relaxed text-amber-700/90">{reason}</p>
+      {databaseTitle && (
+        <p className="mt-1 text-xs text-amber-700/70">
+          Last connected database: {databaseTitle}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={onDisconnect}
+        disabled={disconnecting}
+        className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 shadow-sm ring-1 ring-amber-200 transition-colors hover:bg-amber-100/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-70"
+      >
+        {disconnecting ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+        ) : (
+          <Unplug className="h-3.5 w-3.5" aria-hidden="true" />
+        )}
+        Remove connection
+      </button>
+    </div>
+  );
+}
+
+function StatusPill({
+  connected,
+  problem,
+}: {
+  connected: boolean;
+  problem: boolean;
+}) {
+  if (connected && !problem) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-600">
+        <Check className="h-3 w-3" aria-hidden="true" />
+        Connected
+      </span>
+    );
+  }
+  if (connected && problem) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-600">
+        <AlertCircle className="h-3 w-3" aria-hidden="true" />
+        Needs attention
+      </span>
+    );
+  }
+  return (
     <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-500">
       Not connected
     </span>
