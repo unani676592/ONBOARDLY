@@ -2,7 +2,11 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { fullNameOf } from "@/lib/user";
 import { EMAIL_FROM } from "@/lib/email/config";
 import { getResend } from "@/lib/email/resend";
-import { buildInviteEmail } from "@/lib/email/inviteEmail";
+import {
+  DEFAULT_INVITE_TEMPLATE,
+  renderTemplate,
+  type EmailTemplate,
+} from "@/lib/email/inviteTemplate";
 
 // Server-only: send one client their invite email and stamp invite_sent_at.
 // The caller records the activity run (see logActionRun); this function is
@@ -47,20 +51,41 @@ export async function sendInviteEmail(
   }
 
   const magicLink = `${baseUrl}/onboard/${client.token}`;
-  const email = buildInviteEmail({
-    clientName: client.name ?? "",
-    agencyName: fullNameOf(user) ?? "",
-    magicLink,
+
+  // Load this agency's saved template; fall back to the shared default when they
+  // haven't customized one (same source of truth the editor uses). RLS scopes
+  // this to the owner's own row.
+  let template: EmailTemplate = DEFAULT_INVITE_TEMPLATE;
+  const { data: saved, error: templateError } = await supabase
+    .from("email_templates")
+    .select("subject, body")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (templateError) {
+    // A template read failure shouldn't block the invite — the default still
+    // produces a valid, honest email.
+    console.error("sendInviteEmail template:", templateError.message);
+  } else if (saved?.subject && saved?.body) {
+    template = { subject: saved.subject, body: saved.body };
+  }
+
+  // Resolve each variable to a real value, with graceful fallbacks so no token
+  // or empty string ever reaches the client. "Your agency" mirrors the editor
+  // preview's placeholder when no account name is set.
+  const email = renderTemplate(template, {
+    client_name: client.name?.trim() || "there",
+    agency_name: fullNameOf(user) || "Your agency",
+    magic_link: magicLink,
   });
 
   let result: SendInviteResult;
   try {
+    // Plain text only — the template body is plain text with real line breaks.
     const { data, error: sendError } = await getResend().emails.send({
       from: EMAIL_FROM,
       to: client.email,
       subject: email.subject,
-      html: email.html,
-      text: email.text,
+      text: email.body,
     });
 
     if (sendError) {
