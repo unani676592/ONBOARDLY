@@ -72,7 +72,9 @@ export async function POST(req: Request, { params }: RouteContext) {
         actionSubtype: "send-email",
         trigger,
         status: result.ok ? "ran" : "failed",
-        reason: result.ok ? null : result.reason,
+        // On success, log any self-correction (e.g. appended magic link) as the
+        // reason so the activity log reflects what actually happened.
+        reason: result.ok ? (result.warning ?? null) : result.reason,
       });
     }
 

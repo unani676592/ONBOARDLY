@@ -119,9 +119,10 @@ export async function runWorkflow(
   return { ran: true, actions };
 }
 
-// The reason to log for an outcome: the failure/skip reason, or null for a plain
-// successful run (the `detail` message id isn't activity-worthy). ActionResult's
-// status union ("ran" | "failed" | "skipped") is exactly the log's vocabulary.
+// The reason to log for an outcome: the failure/skip reason, a self-correction
+// note on a successful run (the `detail` message id isn't activity-worthy), or
+// null. ActionResult's status union ("ran" | "failed" | "skipped") is exactly
+// the log's vocabulary.
 function reasonOf(result: ActionResult): string | null {
-  return result.status === "ran" ? null : result.reason;
+  return result.status === "ran" ? (result.note ?? null) : result.reason;
 }

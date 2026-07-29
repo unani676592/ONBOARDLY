@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { validateTemplate } from "@/lib/email/inviteTemplate";
 
 // Per-agency invite email template: save (POST) the one customizable template.
 //
@@ -31,11 +32,12 @@ export async function POST(req: Request) {
   const subject = String((body as { subject?: unknown })?.subject ?? "").trim();
   const templateBody = String((body as { body?: unknown })?.body ?? "").trim();
 
-  if (!subject) {
-    return NextResponse.json({ ok: false, error: "The subject can’t be empty." });
-  }
-  if (!templateBody) {
-    return NextResponse.json({ ok: false, error: "The body can’t be empty." });
+  // Server-side enforcement of the same hard rules the editor shows inline —
+  // a broken template can't be saved even if the client checks are bypassed.
+  // Unknown-token warnings are advisory only and don't block saving.
+  const { errors } = validateTemplate({ subject, body: templateBody });
+  if (errors.length > 0) {
+    return NextResponse.json({ ok: false, error: errors[0] });
   }
   if (subject.length > SUBJECT_MAX) {
     return NextResponse.json({

@@ -17,7 +17,10 @@ import type {
 // ran, was deliberately skipped (with a reason), or failed (with a reason).
 // There is no silent/fake success — "ran" is only returned when work happened.
 export type ActionResult =
-  | { status: "ran"; detail?: string }
+  // `note` records a self-correction on an otherwise successful run (e.g. an
+  // invite whose template was missing the magic link, appended automatically).
+  // It's logged as the run's reason so the activity log tells the whole truth.
+  | { status: "ran"; detail?: string; note?: string }
   | { status: "skipped"; reason: string }
   | { status: "failed"; reason: string };
 

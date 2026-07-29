@@ -46,6 +46,18 @@ export const TEMPLATE_VARIABLES: readonly TemplateVariable[] = [
   },
 ] as const;
 
+// The exact tokens the send will replace. Anything else left in a {{…}} shape
+// is passed through literally — the editor warns about those.
+export const SUPPORTED_TOKENS: readonly string[] = TEMPLATE_VARIABLES.map(
+  (v) => v.token,
+);
+
+// The one variable a usable invite email can't do without: the link the client
+// opens their form with. Derived from the registry so it stays in step.
+export const MAGIC_LINK_TOKEN = TEMPLATE_VARIABLES.find(
+  (v) => v.key === "magic_link",
+)!.token;
+
 // The concrete value each variable is replaced with at send time. Keyed by the
 // same `key`s as TEMPLATE_VARIABLES so the two can't drift.
 export type TemplateValues = Record<TemplateVariable["key"], string>;
@@ -64,6 +76,46 @@ export function renderTemplate(
       text,
     );
   return { subject: apply(template.subject), body: apply(template.body) };
+}
+
+// Any {{…}} occurrence that isn't a supported token. Catches typos ({{cient_name}})
+// and spaced variants ({{ client_name }}) — both would be sent to the client as
+// literal text since the send only replaces the exact tokens.
+export function findUnknownTokens(text: string): string[] {
+  const matches = text.match(/\{\{[^{}]*\}\}/g) ?? [];
+  const supported = new Set(SUPPORTED_TOKENS);
+  const unknown = matches.filter((m) => !supported.has(m));
+  return [...new Set(unknown)];
+}
+
+// What's wrong with a template. `errors` block saving/sending; `unknownTokens`
+// is a non-blocking warning (they still save, they just get told). Shared by the
+// editor (live), the save API (server-side enforcement), so the rules can't drift.
+export type TemplateIssues = {
+  errors: string[];
+  unknownTokens: string[];
+};
+
+export function validateTemplate(template: EmailTemplate): TemplateIssues {
+  const errors: string[] = [];
+  if (!template.subject.trim()) {
+    errors.push("Add a subject line so the email isn’t blank.");
+  }
+  if (!template.body.trim()) {
+    errors.push("Add an email body.");
+  }
+  if (!template.body.includes(MAGIC_LINK_TOKEN)) {
+    errors.push(
+      `Your email must include the ${MAGIC_LINK_TOKEN} variable so clients can open their form.`,
+    );
+  }
+  const unknownTokens = [
+    ...new Set([
+      ...findUnknownTokens(template.subject),
+      ...findUnknownTokens(template.body),
+    ]),
+  ];
+  return { errors, unknownTokens };
 }
 
 // The default invite template, used when an agency has not saved a custom one.

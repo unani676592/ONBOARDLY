@@ -4,6 +4,7 @@ import { EMAIL_FROM } from "@/lib/email/config";
 import { getResend } from "@/lib/email/resend";
 import {
   DEFAULT_INVITE_TEMPLATE,
+  MAGIC_LINK_TOKEN,
   renderTemplate,
   type EmailTemplate,
 } from "@/lib/email/inviteTemplate";
@@ -18,7 +19,9 @@ import {
 // hands us the name / email / token. No service_role, no client-supplied user_id.
 
 export type SendInviteResult =
-  | { ok: true; id: string }
+  // `warning` is set when the send had to self-correct (e.g. a saved template
+  // missing the magic link) — the email still went out, but the caller logs it.
+  | { ok: true; id: string; warning?: string }
   | { ok: false; status: 401 | 404 | 500 | 502; reason: string };
 
 export async function sendInviteEmail(
@@ -78,6 +81,19 @@ export async function sendInviteEmail(
     magic_link: magicLink,
   });
 
+  // Safety net: the editor and save API both require {{magic_link}}, but a
+  // legacy or tampered row could lack it. Never send a linkless invite — append
+  // the real link so the client can still reach their form, and flag it so the
+  // caller records the self-correction honestly.
+  let bodyText = email.body;
+  let warning: string | undefined;
+  if (!template.body.includes(MAGIC_LINK_TOKEN)) {
+    bodyText = `${bodyText.trimEnd()}\n\n${magicLink}`;
+    warning =
+      "The saved template was missing the magic link, so it was appended automatically.";
+    console.warn("sendInviteEmail: template missing magic link — appended.");
+  }
+
   let result: SendInviteResult;
   try {
     // Plain text only — the template body is plain text with real line breaks.
@@ -85,7 +101,7 @@ export async function sendInviteEmail(
       from: EMAIL_FROM,
       to: client.email,
       subject: email.subject,
-      text: email.body,
+      text: bodyText,
     });
 
     if (sendError) {
@@ -96,7 +112,7 @@ export async function sendInviteEmail(
     } else if (!data?.id) {
       result = { ok: false, status: 502, reason: "Resend returned no message id." };
     } else {
-      result = { ok: true, id: data.id };
+      result = { ok: true, id: data.id, warning };
     }
   } catch (err) {
     const reason = err instanceof Error ? err.message : "Unknown email error.";

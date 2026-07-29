@@ -1,10 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, Loader2, RotateCcw, Save } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  Check,
+  Loader2,
+  RotateCcw,
+  Save,
+} from "lucide-react";
 import {
   DEFAULT_INVITE_TEMPLATE,
   TEMPLATE_VARIABLES,
+  validateTemplate,
   type EmailTemplate,
 } from "@/lib/email/inviteTemplate";
 
@@ -38,6 +46,11 @@ export default function TemplateEditor({
   const pendingCaret = useRef<{ field: Field; pos: number } | null>(null);
 
   const dirty = subject !== baseline.subject || body !== baseline.body;
+
+  // Live validation, same rules the save API enforces. Errors block saving;
+  // unknown tokens are a non-blocking heads-up.
+  const { errors, unknownTokens } = validateTemplate({ subject, body });
+  const hasErrors = errors.length > 0;
 
   // A sample magic link that reflects the real app origin once mounted.
   const [sampleLink, setSampleLink] = useState(
@@ -89,6 +102,13 @@ export default function TemplateEditor({
   );
 
   async function handleSave() {
+    // Don't attempt an invalid save — surface the first blocking issue instead.
+    // (The button is disabled on errors; this also guards the retry link.)
+    if (errors.length > 0) {
+      setStatus("error");
+      setError(errors[0]);
+      return;
+    }
     setStatus("saving");
     setError(null);
     try {
@@ -221,12 +241,67 @@ export default function TemplateEditor({
             </ul>
           </div>
 
+          {/* Blocking validation errors */}
+          {hasErrors && (
+            <div
+              role="alert"
+              className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3"
+            >
+              <div className="flex items-center gap-2 text-sm font-semibold text-rose-700">
+                <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {errors.length > 1
+                  ? "Fix these before saving:"
+                  : "Fix this before saving:"}
+              </div>
+              <ul className="mt-1.5 space-y-1 pl-6 text-sm leading-relaxed text-rose-600">
+                {errors.map((msg) => (
+                  <li key={msg} className="list-disc">
+                    {msg}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Non-blocking warning: unrecognized variables */}
+          {unknownTokens.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-700">
+                <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {unknownTokens.length > 1
+                  ? "These variables aren’t recognized"
+                  : "This variable isn’t recognized"}
+              </div>
+              <p className="mt-1.5 text-sm leading-relaxed text-amber-700/90">
+                They’ll be sent to the client exactly as written, not replaced:{" "}
+                {unknownTokens.map((t, i) => (
+                  <span key={t}>
+                    {i > 0 && ", "}
+                    <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[13px] text-amber-800">
+                      {t}
+                    </code>
+                  </span>
+                ))}
+                . Supported variables are{" "}
+                {TEMPLATE_VARIABLES.map((v, i) => (
+                  <span key={v.key}>
+                    {i > 0 && ", "}
+                    <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[13px] text-amber-800">
+                      {v.token}
+                    </code>
+                  </span>
+                ))}
+                .
+              </p>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <button
               type="button"
               onClick={handleSave}
-              disabled={!dirty || status === "saving"}
+              disabled={!dirty || status === "saving" || hasErrors}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-indigo-600/30 transition-colors hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {status === "saving" ? (

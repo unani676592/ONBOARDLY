@@ -13,7 +13,8 @@ export const sendEmailAction: WorkflowAction = {
   async run({ clientId, baseUrl }: ActionContext): Promise<ActionResult> {
     const result = await sendInviteEmail(clientId, baseUrl);
     if (result.ok) {
-      return { status: "ran", detail: result.id };
+      // Carry any self-correction (e.g. appended magic link) into the log.
+      return { status: "ran", detail: result.id, note: result.warning };
     }
     return { status: "failed", reason: result.reason };
   },
