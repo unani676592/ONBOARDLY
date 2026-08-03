@@ -1,18 +1,29 @@
-import { FileText, HardDrive, Mail } from "lucide-react";
+import { FileText, Mail } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { checkConnection } from "@/lib/notion/api";
+import { checkConnection as checkDriveConnection } from "@/lib/googleDrive/oauth";
 import NotionCard from "@/components/app/integrations/NotionCard";
+import GoogleDriveCard from "@/components/app/integrations/GoogleDriveCard";
 import type { NotionConnectionStatus } from "@/lib/notion/types";
+import type { GoogleDriveConnectionStatus } from "@/lib/googleDrive/types";
 
 export const metadata = {
   title: "Integrations — Onboardly",
 };
 
-export default async function IntegrationsPage() {
+export default async function IntegrationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ drive_error?: string }>;
+}) {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // A real failure passed back from the Drive OAuth callback (e.g. cancelled
+  // consent, save error) — surfaced honestly on the card, not swallowed.
+  const driveError = (await searchParams).drive_error ?? null;
 
   // Read status server-side. The token is read here only to re-verify liveness
   // against Notion; it is never passed to the client — only the resulting
@@ -41,6 +52,29 @@ export default async function IntegrationsPage() {
     }
   }
 
+  // Same pattern for Drive: the refresh token is read only to re-verify (mint an
+  // access token + read the account) and never leaves the server. A definitive
+  // invalid_grant — expected ~weekly while the app is in testing — flags a
+  // "needs attention" problem; a transient blip leaves it shown as connected.
+  let drive: GoogleDriveConnectionStatus = { connected: false };
+  if (user) {
+    const { data } = await supabase
+      .from("google_drive_connections")
+      .select("refresh_token, account_email, account_name, connected_at")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (data) {
+      const check = await checkDriveConnection(data.refresh_token);
+      drive = {
+        connected: true,
+        accountEmail: check.state === "ok" ? check.email ?? data.account_email : data.account_email,
+        accountName: check.state === "ok" ? check.name ?? data.account_name : data.account_name,
+        connectedAt: data.connected_at,
+        problem: check.state === "invalid" ? check.reason : null,
+      };
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl">
       <header>
@@ -52,13 +86,9 @@ export default async function IntegrationsPage() {
 
       <div className="mt-6 space-y-4">
         <NotionCard initial={notion} />
+        <GoogleDriveCard initial={drive} initialError={driveError} />
 
         {/* Honest "coming soon" placeholders — clearly not connectable yet. */}
-        <SoonCard
-          icon={HardDrive}
-          name="Google Drive"
-          description="Create a client folder automatically during onboarding."
-        />
         <SoonCard
           icon={Mail}
           name="Gmail"
