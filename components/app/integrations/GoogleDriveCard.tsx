@@ -5,6 +5,7 @@ import {
   AlertCircle,
   Check,
   CheckCircle2,
+  ExternalLink,
   HardDrive,
   Loader2,
   Plug,
@@ -29,15 +30,27 @@ export default function GoogleDriveCard({
   const [redirecting, setRedirecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
+  // Distinct from `error`: the local disconnect succeeded, but Google didn't
+  // confirm the revoke — so we move to not-connected AND warn honestly.
+  const [warning, setWarning] = useState<string | null>(null);
 
   async function handleDisconnect() {
     setError(null);
+    setWarning(null);
     setDisconnecting(true);
     try {
       const res = await fetch("/api/integrations/google-drive", { method: "DELETE" });
       const body = await res.json().catch(() => ({}));
       if (res.ok && body.ok) {
+        // Clean disconnect: revoke confirmed (or token already dead) + row cleared.
         setStatus({ connected: false });
+      } else if (body.cleared) {
+        // Removed here, but the revoke wasn't confirmed at Google — honest warning.
+        setStatus({ connected: false });
+        setWarning(
+          body.error ??
+            "Removed from Onboardly, but Google didn’t confirm the revoke — the authorization may still be live at Google.",
+        );
       } else {
         setError(body.error ?? `Couldn’t disconnect (HTTP ${res.status}).`);
       }
@@ -99,6 +112,27 @@ export default function GoogleDriveCard({
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <span>{error}</span>
           </p>
+        )}
+
+        {warning && (
+          <div
+            role="alert"
+            className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm leading-relaxed text-amber-700"
+          >
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{warning}</span>
+            </div>
+            <a
+              href="https://myaccount.google.com/permissions"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-1 pl-6 font-semibold text-amber-800 underline hover:text-amber-900"
+            >
+              Remove it in your Google Account
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            </a>
+          </div>
         )}
       </div>
     </div>

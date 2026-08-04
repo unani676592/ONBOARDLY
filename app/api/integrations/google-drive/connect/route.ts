@@ -1,16 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
-import { buildConsentUrl, driveRedirectUri } from "@/lib/googleDrive/oauth";
+import {
+  buildConsentUrl,
+  driveRedirectUri,
+  STATE_COOKIE,
+} from "@/lib/googleDrive/oauth";
 
 // Kicks off the Drive OAuth flow. The browser navigates here (a top-level GET,
 // not a fetch), we set a short-lived CSRF `state` cookie, and 302 to Google's
 // consent screen. The matching callback verifies the state and stores the token.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-// Cookie name for the OAuth CSRF state. SameSite=Lax so it rides the top-level
-// GET redirect back from accounts.google.com.
-export const STATE_COOKIE = "gdrive_oauth_state";
 
 export async function GET(request: NextRequest) {
   const { origin, protocol } = request.nextUrl;

@@ -28,6 +28,10 @@ export type Client = {
   // Set when the invite email was last sent (auto on invite, or manual resend);
   // null if it has never been sent.
   invite_sent_at: string | null;
+  // Set by the Drive "create-folder" action on invite: the created folder's id
+  // and its shareable link. Null until a folder has been created for the client.
+  drive_folder_id: string | null;
+  drive_folder_url: string | null;
 };
 
 export type ClientStats = {

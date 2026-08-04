@@ -17,6 +17,12 @@ const DRIVE_ABOUT = "https://www.googleapis.com/drive/v3/about?fields=user";
 // creates. It cannot read the user's existing Drive.
 export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
+// Cookie name for the OAuth CSRF state, shared by the connect + callback routes.
+// Lives here (not in a route module) because Next.js route files may only export
+// route handlers/segment config — a stray export breaks `next build`.
+// SameSite=Lax so it rides the top-level GET redirect back from Google.
+export const STATE_COOKIE = "gdrive_oauth_state";
+
 function googleCreds(): { clientId: string; clientSecret: string } {
   const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET;
@@ -195,18 +201,40 @@ export async function checkConnection(refreshToken: string): Promise<ConnectionC
   return { state: "ok", email: who.email, name: who.name };
 }
 
-// Best-effort revoke of the stored token at Google. Revoking the refresh token
-// drops the entire grant for THIS client id only — since Drive uses its own
-// OAuth client, login is unaffected. We delete our stored copy regardless.
-export async function revokeToken(token: string): Promise<void> {
+export type RevokeResult =
+  | { ok: true }
+  | { ok: false; status: number | null; error: string };
+
+// Revoke the stored refresh token at Google, and report honestly whether it
+// worked. A 200 means the grant is gone. `invalid_token`/`invalid_grant` means
+// the token is already dead (expired under the testing cap, or previously
+// revoked) — there's nothing left to revoke, so we treat it as a clean success.
+// Any OTHER non-200, or a network failure, is a REAL failure the caller must
+// surface — we never pretend a revoke happened when it didn't.
+//
+// Revoking hits only this (Drive) client id — the Google login grant is a
+// separate OAuth client and is untouched.
+export async function revokeToken(token: string): Promise<RevokeResult> {
+  let res: Response;
   try {
-    await fetch(GOOGLE_REVOKE, {
+    res = await fetch(GOOGLE_REVOKE, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ token }),
       cache: "no-store",
     });
   } catch {
-    // Ignore — the connection is removed from our side either way.
+    return { ok: false, status: null, error: "Couldn’t reach Google to revoke access." };
   }
+  if (res.ok) return { ok: true };
+
+  const detail = (await res.json().catch(() => null)) as { error?: string } | null;
+  if (detail?.error === "invalid_token" || detail?.error === "invalid_grant") {
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    status: res.status,
+    error: `Google didn’t confirm the revoke (HTTP ${res.status}${detail?.error ? `: ${detail.error}` : ""}).`,
+  };
 }

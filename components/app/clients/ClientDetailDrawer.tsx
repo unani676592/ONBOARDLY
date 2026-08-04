@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, File as FileIcon, Link2, Loader2, X } from "lucide-react";
+import {
+  Download,
+  ExternalLink,
+  File as FileIcon,
+  FolderOpen,
+  Link2,
+  Loader2,
+  X,
+} from "lucide-react";
 import Dialog from "@/components/app/Dialog";
 import {
   CONTACT_METHOD_LABELS,
@@ -123,9 +131,34 @@ export default function ClientDetailDrawer({
   const [submission, setSubmission] = useState<ClientSubmission | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  // The Drive folder link, read fresh from the DB on open. The `client` prop
+  // comes from the table's state, which only learns about the folder link
+  // (written server-side ~1s after invite) via realtime — so it can be stale.
+  // Seed from the prop to avoid a flash, then reconcile with a fresh read.
+  const [folderUrl, setFolderUrl] = useState<string | null>(
+    client.drive_folder_url,
+  );
 
   // Only clients who have submitted have a row to fetch.
   const hasSubmitted = client.submitted_at != null;
+
+  // Fresh-read the folder link (RLS-scoped to the owner's own clients), so the
+  // drawer reflects the DB rather than possibly-stale table state.
+  useEffect(() => {
+    setFolderUrl(client.drive_folder_url);
+    let active = true;
+    (async () => {
+      const { data } = await supabase
+        .from("clients")
+        .select("drive_folder_url")
+        .eq("id", client.id)
+        .maybeSingle();
+      if (active && data) setFolderUrl(data.drive_folder_url ?? null);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [client.id, client.drive_folder_url]);
 
   useEffect(() => {
     if (!hasSubmitted) {
@@ -178,6 +211,26 @@ export default function ClientDetailDrawer({
           <X className="h-5 w-5" />
         </button>
       </div>
+
+      {/* Drive folder — shown whenever one has been created for this client,
+          independent of whether they've submitted their intake form yet. */}
+      {folderUrl && (
+        <a
+          href={folderUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-5 flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition-colors hover:border-indigo-200 hover:bg-indigo-50/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        >
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-indigo-50 text-indigo-600">
+            <FolderOpen className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-slate-800">Google Drive folder</p>
+            <p className="truncate text-xs text-slate-400">Open in Google Drive</p>
+          </div>
+          <ExternalLink className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+        </a>
+      )}
 
       <div className="mt-6">
         {loading ? (

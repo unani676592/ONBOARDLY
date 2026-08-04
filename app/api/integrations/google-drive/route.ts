@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
-import { revokeToken } from "@/lib/googleDrive/oauth";
+import { revokeToken, type RevokeResult } from "@/lib/googleDrive/oauth";
 import type { GoogleDriveConnectionStatus } from "@/lib/googleDrive/types";
 
 // Per-agency Google Drive connection: status (GET) and disconnect (DELETE).
@@ -47,17 +47,22 @@ export async function DELETE() {
     return NextResponse.json({ ok: false, error: "Not signed in." }, { status: 401 });
   }
 
-  // Read the token first so we can revoke the grant at Google before deleting
-  // our copy. Revoking hits only this (Drive) client id — login is untouched.
+  // Read the token first so we can revoke the grant at Google BEFORE deleting
+  // our copy — a delete-then-revoke ordering would leave nothing to revoke.
+  // Revoking hits only this (Drive) client id — login is a separate client.
   const { data: conn } = await supabase
     .from("google_drive_connections")
     .select("refresh_token")
     .eq("user_id", user.id)
     .maybeSingle();
+
+  let revoke: RevokeResult | null = null;
   if (conn?.refresh_token) {
-    await revokeToken(conn.refresh_token);
+    revoke = await revokeToken(conn.refresh_token);
   }
 
+  // Always clear our stored copy — we never keep a token we can't stand behind,
+  // even when the revoke couldn't be confirmed.
   const { error } = await supabase
     .from("google_drive_connections")
     .delete()
@@ -69,6 +74,18 @@ export async function DELETE() {
       { ok: false, error: "Couldn’t disconnect. Please try again." },
       { status: 500 },
     );
+  }
+
+  // Honest outcome: we never report a clean disconnect for an unverified revoke.
+  // The row is gone locally, but if Google didn't confirm, the authorization may
+  // still be live there — say so (the card points the user to remove it).
+  if (revoke && !revoke.ok) {
+    return NextResponse.json({
+      ok: false,
+      cleared: true,
+      error:
+        "Removed from Onboardly, but Google didn’t confirm the revoke — the authorization may still be live at Google.",
+    });
   }
   return NextResponse.json({ ok: true });
 }

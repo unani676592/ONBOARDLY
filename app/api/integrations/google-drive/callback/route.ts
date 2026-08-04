@@ -4,8 +4,8 @@ import {
   driveRedirectUri,
   exchangeCode,
   fetchDriveUser,
+  STATE_COOKIE,
 } from "@/lib/googleDrive/oauth";
-import { STATE_COOKIE } from "../connect/route";
 
 // Google redirects the browser back here with `?code=` (or `?error=`) after the
 // consent round-trip. We verify the CSRF state, exchange the code for a refresh
