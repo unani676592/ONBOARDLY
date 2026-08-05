@@ -1,8 +1,7 @@
-import type {
-  PersistedNode,
-  WorkflowRow,
-} from "@/components/app/automations/workflow-persistence";
+import type { WorkflowRow } from "@/components/app/automations/workflow-persistence";
+import type { Subtype } from "@/components/app/automations/workflow-data";
 import { getAction } from "@/lib/automation/registry";
+import { actionNodesForTrigger } from "@/lib/automation/reachability";
 import { logActionRun } from "@/lib/automation/activityLog";
 import type {
   ActionResult,
@@ -11,52 +10,16 @@ import type {
   WorkflowTriggerContext,
 } from "@/lib/automation/types";
 
-// Order the action nodes the way the workflow runs them: breadth-first from the
-// trigger(s), following edge direction. This visits nodes in execution order for
-// a linear chain and, more generally, only includes action nodes actually
-// reachable from a trigger — a disconnected/orphan action never runs. Triggers
-// themselves aren't actions, so they're walked through but not emitted.
-function orderedActionNodes(workflow: WorkflowRow): PersistedNode[] {
-  const byId = new Map(workflow.nodes.map((n) => [n.id, n]));
-
-  const outgoing = new Map<string, string[]>();
-  for (const edge of workflow.edges) {
-    const list = outgoing.get(edge.source) ?? [];
-    list.push(edge.target);
-    outgoing.set(edge.source, list);
-  }
-
-  const triggerIds = workflow.nodes
-    .filter((n) => n.data.kind === "trigger")
-    .map((n) => n.id);
-
-  const visited = new Set<string>(triggerIds);
-  const queue = [...triggerIds];
-  const ordered: PersistedNode[] = [];
-
-  while (queue.length) {
-    const id = queue.shift()!;
-    for (const nextId of outgoing.get(id) ?? []) {
-      if (visited.has(nextId)) continue;
-      visited.add(nextId);
-      const node = byId.get(nextId);
-      if (!node) continue;
-      if (node.data.kind === "action") ordered.push(node);
-      queue.push(nextId);
-    }
-  }
-
-  return ordered;
-}
-
 // Run a workflow for one triggering client.
 //
-// The engine is action-agnostic: it walks the reachable action nodes in order
-// and, for each, asks the registry for a handler by the node's subtype. A
-// registered action runs; an unregistered subtype (create-folder, add-crm-record,
-// condition, delay, …) is skipped with reason "not implemented" — no error, no
-// fake success. Actions run one at a time, inline (synchronous — no queue, no
-// cron). Adding a new action never touches this function.
+// The engine is action-agnostic: it walks the action nodes reachable from the
+// trigger that fired (ctx.trigger) — NOT every trigger in the workflow — so a
+// `files-uploaded` branch never runs on a `client-invited` invite. For each, it
+// asks the registry for a handler by the node's subtype. A registered action
+// runs; an unregistered subtype (condition, delay, …) is skipped with reason
+// "not implemented" — no error, no fake success. Actions run one at a time,
+// inline (synchronous — no queue, no cron). Adding a new action never touches
+// this function.
 //
 // Every executed action's outcome is logged to automation_runs (best-effort;
 // logging never changes the action's real result). Draft/non-enabled workflows
@@ -82,7 +45,13 @@ export async function runWorkflow(
 
   const actions: EngineActionOutcome[] = [];
 
-  for (const node of orderedActionNodes(workflow)) {
+  // Scope to the trigger that fired. In practice runWorkflow is only ever
+  // called with "client-invited" (manual-resend bypasses the engine entirely;
+  // files-uploaded goes through runTriggerActions), and if some other value
+  // ever reached here no trigger node would match, so nothing would run — never
+  // "run everything". The cast is safe: RunTrigger ∩ Subtype covers the real
+  // trigger subtypes; "manual-resend" isn't a node subtype and yields no match.
+  for (const node of actionNodesForTrigger(workflow, ctx.trigger as Subtype)) {
     const outcome: EngineActionOutcome = {
       nodeId: node.id,
       subtype: node.data.subtype,
