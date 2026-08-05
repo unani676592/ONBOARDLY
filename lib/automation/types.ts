@@ -32,6 +32,12 @@ export type ActionContext = {
   trigger: RunTrigger;
   workflow: WorkflowRow;
   node: PersistedNode;
+  // Set only by the session-less trigger caller (runTriggerActions), where
+  // there's no agency session to derive the owner from. runWorkflow (engine
+  // core) never sets it — its actions read the owner via auth.getUser(). An
+  // action that can run session-less (upload-files) uses this to scope by
+  // user_id explicitly under service_role.
+  userId?: string;
 };
 
 // The one interface every action implements. `id` matches the node subtype the

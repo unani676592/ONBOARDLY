@@ -106,11 +106,12 @@ export default function ActivityTab() {
 
 // --- One activity row -------------------------------------------------------
 
-type Tone = "success" | "failed" | "skipped";
+type Tone = "success" | "failed" | "skipped" | "running";
 
 function toneOf(status: RunStatus): Tone {
   if (status === "ran" || status === "sent") return "success";
   if (status === "skipped") return "skipped";
+  if (status === "running") return "running";
   return "failed";
 }
 
@@ -124,6 +125,7 @@ function statusWordOf(run: AutomationRun, tone: Tone): string {
   const isEmail = !run.action_subtype || run.action_subtype === "send-email";
   if (tone === "success") return isEmail ? "Sent" : "Ran";
   if (tone === "failed") return "Failed";
+  if (tone === "running") return "In progress";
   return "Skipped";
 }
 
@@ -146,6 +148,13 @@ const TONE_STYLES: Record<
     word: "text-slate-500",
     reason: "bg-slate-50 text-slate-500",
   },
+  // In-progress. Deliberately SKY (+ a spinner), not amber, so it never reads as
+  // the amber "needs attention" state on the Integrations cards.
+  running: {
+    badge: "bg-sky-50 text-sky-600",
+    word: "text-sky-600",
+    reason: "bg-sky-50 text-sky-600",
+  },
 };
 
 function RunRow({ run }: { run: AutomationRun }) {
@@ -166,6 +175,9 @@ function RunRow({ run }: { run: AutomationRun }) {
           <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
         ) : tone === "failed" ? (
           <XCircle className="h-4 w-4" aria-hidden="true" />
+        ) : tone === "running" ? (
+          // motion-safe so the spin respects prefers-reduced-motion.
+          <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
         ) : (
           <MinusCircle className="h-4 w-4" aria-hidden="true" />
         )}

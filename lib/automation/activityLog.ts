@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SupabaseServerClient } from "@/lib/supabaseServer";
 import type { RunTrigger } from "@/lib/automationRuns";
 
@@ -37,4 +38,51 @@ export async function logActionRun(
     error: input.reason,
   });
   if (error) console.error("logActionRun:", error.message);
+}
+
+// Write-then-update logging for long actions (Drive uploads). `startActionRun`
+// inserts a `running` row up front and returns its id; `finishActionRun` sets
+// the terminal outcome. A killed request between them leaves a visible
+// in-progress row rather than nothing. Best-effort — a logging failure never
+// changes the real action outcome. Accepts any Supabase client so the
+// session-less caller can pass a service_role client (scoped explicitly).
+export type StartRunInput = Omit<ActionLogInput, "status" | "reason">;
+
+export async function startActionRun(
+  supabase: SupabaseClient,
+  input: StartRunInput,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("automation_runs")
+    .insert({
+      user_id: input.userId,
+      client_id: input.clientId,
+      client_name: input.clientName,
+      client_email: input.clientEmail,
+      workflow_id: input.workflowId,
+      action_subtype: input.actionSubtype,
+      trigger: input.trigger,
+      status: "running",
+      error: null,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    console.error("startActionRun:", error.message);
+    return null;
+  }
+  return (data as { id: string }).id;
+}
+
+export async function finishActionRun(
+  supabase: SupabaseClient,
+  runId: string,
+  status: ActionLogStatus,
+  reason: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from("automation_runs")
+    .update({ status, error: reason })
+    .eq("id", runId);
+  if (error) console.error("finishActionRun:", error.message);
 }

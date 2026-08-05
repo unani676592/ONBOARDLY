@@ -3,6 +3,7 @@ import type { WorkflowAction } from "@/lib/automation/types";
 import { sendEmailAction } from "@/lib/automation/actions/sendEmail";
 import { addToNotionAction } from "@/lib/automation/actions/addToNotion";
 import { createFolderAction } from "@/lib/automation/actions/createFolder";
+import { uploadFilesAction } from "@/lib/automation/actions/uploadFiles";
 
 // The action registry: subtype → the action that handles it.
 //
@@ -22,6 +23,7 @@ function register(action: WorkflowAction): void {
 register(sendEmailAction);
 register(addToNotionAction);
 register(createFolderAction);
+register(uploadFilesAction);
 
 export function getAction(subtype: Subtype): WorkflowAction | undefined {
   return registry.get(subtype);

@@ -6,6 +6,9 @@ import {
 } from "@/lib/onboardUploads";
 import { markClientOnboarded } from "@/lib/onboard";
 import { MAX_FILES } from "@/lib/uploads";
+import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { runTriggerActions } from "@/lib/automation/runTriggerActions";
+import type { WorkflowRow } from "@/components/app/automations/workflow-persistence";
 
 // Public intake file-upload endpoint. Validates the per-client token first,
 // then writes each file to the private `client-files` bucket via the
@@ -14,6 +17,10 @@ import { MAX_FILES } from "@/lib/uploads";
 // only touches storage and never changes the client's status.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// The files-uploaded automation can stream several files through Drive; set an
+// explicit ceiling rather than relying on the platform default (a worst-case
+// 6×10MB batch can exceed the 10s default — see client_drive_files resumability).
+export const maxDuration = 60;
 
 type RouteContext = { params: Promise<{ token: string }> };
 
@@ -85,6 +92,35 @@ export async function POST(req: Request, { params }: RouteContext) {
   // exists. Best-effort: a failure here never blocks the upload response.
   if (results.some((r) => r.ok)) {
     await markClientOnboarded(token);
+
+    // Fire the files-uploaded automation trigger. This runs session-less (the
+    // intake visitor is anonymous), so we pass the resolved agency userId + a
+    // service_role client; runTriggerActions scopes every op by user_id and runs
+    // only the actions wired downstream of the files-uploaded trigger. Wrapped —
+    // an automation failure must never break the client's upload response.
+    try {
+      const admin = createSupabaseAdminClient();
+      const { data: wf } = await admin
+        .from("workflows")
+        .select("*")
+        .eq("user_id", target.userId)
+        .maybeSingle();
+      if (wf) {
+        const baseUrl = (
+          process.env.NEXT_PUBLIC_SITE_URL ?? new URL(req.url).origin
+        ).replace(/\/$/, "");
+        await runTriggerActions(admin, wf as WorkflowRow, "files-uploaded", {
+          clientId: target.clientId,
+          userId: target.userId,
+          baseUrl,
+        });
+      }
+    } catch (err) {
+      console.error(
+        "files-uploaded trigger:",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 
   // Always 200 with a per-file result array — partial failures are normal and

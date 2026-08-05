@@ -7,6 +7,7 @@ import {
   Mail,
   Split,
   SquareCheckBig,
+  UploadCloud,
   UserPlus,
   type LucideIcon,
 } from "lucide-react";
@@ -30,6 +31,7 @@ export type Subtype =
   | "files-uploaded"
   | "send-email"
   | "create-folder"
+  | "upload-files"
   | "create-task"
   | "add-crm-record"
   | "condition"
@@ -132,6 +134,17 @@ export const BLOCKS: Record<Subtype, BlockDef> = {
     label: "Create folder",
     description: "Create a Google Drive folder for the client",
     icon: FolderPlus,
+    accent: "indigo",
+    typeLabel: "Action",
+    available: true,
+  },
+  "upload-files": {
+    subtype: "upload-files",
+    kind: "action",
+    group: "Actions",
+    label: "Upload files to Drive",
+    description: "Upload the client’s uploaded files to their Drive folder",
+    icon: UploadCloud,
     accent: "indigo",
     typeLabel: "Action",
     available: true,
