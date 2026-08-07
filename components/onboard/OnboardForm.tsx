@@ -69,6 +69,8 @@ export default function OnboardForm({
   // Set once the six intake fields have been saved, so a file-only retry after
   // a partial failure doesn't re-submit them.
   const [fieldsSaved, setFieldsSaved] = useState(false);
+  // Confirmation shown after an already-submitted client sends extra files.
+  const [sentNote, setSentNote] = useState<string | null>(null);
 
   // Once the fields are saved and every staged file has uploaded, advance to the
   // thank-you screen. Covers all completion paths (submit, retry-all, retry-one)
@@ -86,6 +88,7 @@ export default function OnboardForm({
 
   function addFiles(incoming: FileList | null) {
     if (!incoming || incoming.length === 0) return;
+    setSentNote(null);
     const rejected: string[] = [];
     const accepted: StagedFile[] = [];
     let count = files.length;
@@ -211,6 +214,126 @@ export default function OnboardForm({
     }
   }
 
+  // An already-submitted client sending extra files: upload the staged files
+  // directly (POST /files), WITHOUT re-submitting the six intake fields. On full
+  // success we clear the list so they can send another batch, and show a brief
+  // confirmation. Failed files stay for retry.
+  async function handleSendMore() {
+    const pending = files.filter(
+      (s) => s.status === "staged" || s.status === "failed",
+    );
+    if (pending.length === 0 || submitting) return;
+    setSubmitting(true);
+    setFormError(null);
+    setSentNote(null);
+    try {
+      const ok = await uploadBatch(pending);
+      if (ok) {
+        setFiles([]);
+        setSentNote("Files sent — you can add more anytime.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Shared dropzone + staged-file list, reused by the main form and the
+  // "send more files" section on the confirmation screen.
+  function fileArea() {
+    return (
+      <>
+        <label
+          htmlFor="onb-files"
+          className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed px-4 py-6 text-center transition-colors focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-1 ${
+            submitting
+              ? "border-slate-200 bg-slate-50 opacity-60"
+              : "border-slate-300 bg-slate-50 hover:border-indigo-400 hover:bg-indigo-50/40"
+          }`}
+        >
+          <Upload className="h-6 w-6 text-slate-400" aria-hidden="true" />
+          <span className="text-sm font-medium text-slate-700">
+            Tap to add files
+          </span>
+          <span className="text-xs text-slate-400">
+            PNG, JPG, WEBP, GIF or PDF · up to {formatBytes(MAX_FILE_BYTES)} each
+            · {MAX_FILES} max
+          </span>
+          <input
+            id="onb-files"
+            type="file"
+            multiple
+            accept={ACCEPT_ATTR}
+            onChange={onFileInputChange}
+            disabled={submitting}
+            className="sr-only"
+          />
+        </label>
+
+        {fileError && <p className="mt-1.5 text-sm text-red-500">{fileError}</p>}
+
+        {files.length > 0 && (
+          <ul className="mt-3 space-y-2">
+            {files.map((s) => (
+              <li
+                key={s.id}
+                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+              >
+                <FileIcon
+                  className="h-5 w-5 shrink-0 text-slate-400"
+                  aria-hidden="true"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-800">
+                    {s.file.name}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {formatBytes(s.file.size)}
+                    {s.status === "failed" && s.error ? ` · ${s.error}` : ""}
+                  </p>
+                </div>
+
+                {s.status === "uploading" && (
+                  <Loader2
+                    className="h-4 w-4 shrink-0 text-indigo-500 motion-safe:animate-spin"
+                    aria-label="Uploading"
+                  />
+                )}
+                {s.status === "done" && (
+                  <CheckCircle2
+                    className="h-5 w-5 shrink-0 text-emerald-500"
+                    aria-label="Uploaded"
+                  />
+                )}
+                {s.status === "failed" && (
+                  <button
+                    type="button"
+                    onClick={() => retryOne(s.id)}
+                    disabled={submitting}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50 disabled:opacity-50"
+                  >
+                    <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
+                    Retry
+                  </button>
+                )}
+                {(s.status === "staged" || s.status === "failed") && (
+                  <button
+                    type="button"
+                    onClick={() => removeFile(s.id)}
+                    disabled={submitting}
+                    aria-label={`Remove ${s.file.name}`}
+                    className="inline-flex shrink-0 rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </>
+    );
+  }
+
   function validate(): Errors {
     const next: Errors = {};
     if (!businessName.trim()) next.businessName = "Enter your business or brand name.";
@@ -292,20 +415,78 @@ export default function OnboardForm({
   }
 
   if (done) {
+    const pendingCount = files.filter(
+      (s) => s.status === "staged" || s.status === "failed",
+    ).length;
     return (
-      <div className="mt-8 text-center">
-        <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-emerald-600">
-          <CheckCircle2 className="h-9 w-9" aria-hidden="true" />
-        </span>
-        <h2 className="mt-6 text-xl font-bold tracking-tight text-slate-900">
-          Thanks, {clientName}!
-        </h2>
-        <p className="mt-2 text-slate-600">
-          {agencyName
-            ? `Your details are with ${agencyName}.`
-            : "Your details are with your agency."}
-        </p>
-        <p className="mt-4 text-sm text-slate-400">You can close this page.</p>
+      <div className="mt-8">
+        <div className="text-center">
+          <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-emerald-600">
+            <CheckCircle2 className="h-9 w-9" aria-hidden="true" />
+          </span>
+          <h2 className="mt-6 text-xl font-bold tracking-tight text-slate-900">
+            Thanks, {clientName}!
+          </h2>
+          <p className="mt-2 text-slate-600">
+            {agencyName
+              ? `Your details are with ${agencyName}.`
+              : "Your details are with your agency."}
+          </p>
+        </div>
+
+        {/* Already-submitted clients can still send files afterward — the six
+            intake answers stay as they were; this only adds files. */}
+        <div className="mt-8 border-t border-slate-100 pt-6">
+          <h3 className="text-sm font-semibold text-slate-800">
+            Need to send more files?
+          </h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Add brand assets or documents anytime — {agencyName || "your agency"}{" "}
+            will get them.
+          </p>
+
+          <div className="mt-4">{fileArea()}</div>
+
+          {pendingCount > 0 && (
+            <button
+              type="button"
+              onClick={handleSendMore}
+              disabled={submitting}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-indigo-600/30 transition-colors hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {submitting ? (
+                <>
+                  <Loader2
+                    className="h-4 w-4 motion-safe:animate-spin"
+                    aria-hidden="true"
+                  />
+                  Sending…
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" aria-hidden="true" />
+                  Send {pendingCount} file{pendingCount > 1 ? "s" : ""}
+                </>
+              )}
+            </button>
+          )}
+
+          {sentNote && (
+            <p className="mt-3 flex items-center justify-center gap-1.5 text-sm font-medium text-emerald-600">
+              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+              {sentNote}
+            </p>
+          )}
+
+          {formError && (
+            <p
+              role="alert"
+              className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-center text-sm font-medium text-red-600"
+            >
+              {formError}
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -473,96 +654,7 @@ export default function OnboardForm({
           <span className="font-normal text-slate-400">(optional)</span>
         </span>
 
-        <label
-          htmlFor="onb-files"
-          className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed px-4 py-6 text-center transition-colors focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-1 ${
-            submitting
-              ? "border-slate-200 bg-slate-50 opacity-60"
-              : "border-slate-300 bg-slate-50 hover:border-indigo-400 hover:bg-indigo-50/40"
-          }`}
-        >
-          <Upload className="h-6 w-6 text-slate-400" aria-hidden="true" />
-          <span className="text-sm font-medium text-slate-700">
-            Tap to add files
-          </span>
-          <span className="text-xs text-slate-400">
-            PNG, JPG, WEBP, GIF or PDF · up to {formatBytes(MAX_FILE_BYTES)} each
-            · {MAX_FILES} max
-          </span>
-          <input
-            id="onb-files"
-            type="file"
-            multiple
-            accept={ACCEPT_ATTR}
-            onChange={onFileInputChange}
-            disabled={submitting}
-            className="sr-only"
-          />
-        </label>
-
-        {fileError && (
-          <p className="mt-1.5 text-sm text-red-500">{fileError}</p>
-        )}
-
-        {files.length > 0 && (
-          <ul className="mt-3 space-y-2">
-            {files.map((s) => (
-              <li
-                key={s.id}
-                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5"
-              >
-                <FileIcon
-                  className="h-5 w-5 shrink-0 text-slate-400"
-                  aria-hidden="true"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-800">
-                    {s.file.name}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {formatBytes(s.file.size)}
-                    {s.status === "failed" && s.error ? ` · ${s.error}` : ""}
-                  </p>
-                </div>
-
-                {s.status === "uploading" && (
-                  <Loader2
-                    className="h-4 w-4 shrink-0 text-indigo-500 motion-safe:animate-spin"
-                    aria-label="Uploading"
-                  />
-                )}
-                {s.status === "done" && (
-                  <CheckCircle2
-                    className="h-5 w-5 shrink-0 text-emerald-500"
-                    aria-label="Uploaded"
-                  />
-                )}
-                {s.status === "failed" && (
-                  <button
-                    type="button"
-                    onClick={() => retryOne(s.id)}
-                    disabled={submitting}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50 disabled:opacity-50"
-                  >
-                    <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
-                    Retry
-                  </button>
-                )}
-                {(s.status === "staged" || s.status === "failed") && (
-                  <button
-                    type="button"
-                    onClick={() => removeFile(s.id)}
-                    disabled={submitting}
-                    aria-label={`Remove ${s.file.name}`}
-                    className="inline-flex shrink-0 rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
-                  >
-                    <X className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+        {fileArea()}
       </div>
 
       <button

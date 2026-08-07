@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Download,
   ExternalLink,
@@ -41,10 +41,19 @@ function Field({ label, value }: { label: string; value: string }) {
 // route, which generates signed download URLs server-side (the bucket is
 // private — no public URLs). Manages its own loading / error / empty states so
 // a file hiccup never blocks the intake answers above.
-function ClientFilesSection({ clientId }: { clientId: string }) {
+function ClientFilesSection({
+  clientId,
+  onLoaded,
+}: {
+  clientId: string;
+  onLoaded?: () => void;
+}) {
   const [files, setFiles] = useState<ClientFile[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  // Latest onLoaded via ref so the fetch effect stays keyed only on clientId.
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
 
   useEffect(() => {
     let active = true;
@@ -57,6 +66,9 @@ function ClientFilesSection({ clientId }: { clientId: string }) {
         const json = (await res.json()) as { files?: ClientFile[] };
         if (!active) return;
         setFiles(json.files ?? []);
+        // The file list actually rendered — safe to mark it seen. Never runs on
+        // the error path below, so a failed fetch leaves the signal intact.
+        onLoadedRef.current?.();
       } catch {
         if (active) setError(true);
       } finally {
@@ -138,6 +150,21 @@ export default function ClientDetailDrawer({
   const [folderUrl, setFolderUrl] = useState<string | null>(
     client.drive_folder_url,
   );
+  // Stamp files_seen_at once per open — but only once ClientFilesSection has
+  // actually rendered the file list (its onLoaded). This clears the "New files"
+  // signal; a mis-click that never shows the files, or a failed fetch, won't.
+  const seenStamped = useRef<string | null>(null);
+  function markFilesSeen() {
+    if (seenStamped.current === client.id) return;
+    seenStamped.current = client.id;
+    void supabase
+      .from("clients")
+      .update({ files_seen_at: new Date().toISOString() })
+      .eq("id", client.id)
+      .then(({ error: e }) => {
+        if (e) console.error("files_seen stamp:", e.message);
+      });
+  }
 
   // Only clients who have submitted have a row to fetch.
   const hasSubmitted = client.submitted_at != null;
@@ -254,7 +281,7 @@ export default function ClientDetailDrawer({
               <Field label="Contact details" value={submission.contact_value} />
               <Field label="Look and feel" value={submission.look_and_feel} />
             </dl>
-            <ClientFilesSection clientId={client.id} />
+            <ClientFilesSection clientId={client.id} onLoaded={markFilesSeen} />
             <p className="mt-6 border-t border-slate-100 pt-4 text-xs text-slate-400">
               Submitted {formatDate(submission.created_at)}
             </p>

@@ -16,6 +16,17 @@ import { supabase } from "@/lib/supabase";
 import { formatDate, relativeTime } from "@/lib/time";
 import { initialsFor } from "@/lib/user";
 
+// "New files" signal: an onboarded client uploaded files after the agency last
+// viewed their file list (files_updated_at > files_seen_at). ISO timestamps
+// compare correctly as strings. Cleared when the drawer renders the files.
+function hasNewFiles(c: Client): boolean {
+  return (
+    c.status === "onboarded" &&
+    !!c.files_updated_at &&
+    (!c.files_seen_at || c.files_updated_at > c.files_seen_at)
+  );
+}
+
 export default function ClientsTable({
   initialClients,
 }: {
@@ -288,6 +299,11 @@ export default function ClientsTable({
                             {client.submitted_at && (
                               <span className="text-xs font-medium text-emerald-600">
                                 · Submitted
+                              </span>
+                            )}
+                            {hasNewFiles(client) && (
+                              <span className="inline-flex shrink-0 items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-600">
+                                New files
                               </span>
                             )}
                           </p>

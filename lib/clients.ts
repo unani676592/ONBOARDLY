@@ -32,6 +32,11 @@ export type Client = {
   // and its shareable link. Null until a folder has been created for the client.
   drive_folder_id: string | null;
   drive_folder_url: string | null;
+  // Powers the "New files" signal for files sent after onboarding.
+  // `files_updated_at` is stamped on every intake upload; `files_seen_at` when
+  // the agency has viewed the file list. New files → updated_at > seen_at.
+  files_updated_at: string | null;
+  files_seen_at: string | null;
 };
 
 export type ClientStats = {
