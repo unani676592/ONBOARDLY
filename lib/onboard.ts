@@ -32,7 +32,13 @@ export type OnboardPayload = {
 
 export type SubmitResult = "ok" | "already_submitted" | "invalid" | "error";
 
-export type MarkOnboardedResult = "ok" | "unchanged" | "invalid" | "error";
+// On "error" the real reason rides along, so the caller can surface it (an
+// Activity row) instead of dropping it — a silently-swallowed RPC failure is
+// exactly how a missing mark_client_onboarded function went unnoticed for
+// months.
+export type MarkOnboardedResult =
+  | { status: "ok" | "unchanged" | "invalid" }
+  | { status: "error"; reason: string };
 
 /**
  * Look up the greeting data for an intake token. Returns null for an invalid /
@@ -114,7 +120,7 @@ export async function submitOnboard(
 export async function markClientOnboarded(
   token: string,
 ): Promise<MarkOnboardedResult> {
-  if (!token) return "invalid";
+  if (!token) return { status: "invalid" };
 
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("mark_client_onboarded", {
@@ -123,12 +129,12 @@ export async function markClientOnboarded(
 
   if (error) {
     console.error("mark_client_onboarded:", error.message);
-    return "error";
+    return { status: "error", reason: error.message };
   }
 
   const result = Array.isArray(data) ? data[0] : data;
   if (result === "ok" || result === "unchanged" || result === "invalid") {
-    return result;
+    return { status: result };
   }
-  return "error";
+  return { status: "error", reason: `Unexpected result: ${String(result)}` };
 }

@@ -94,6 +94,7 @@ Agencies and freelancers lose real time onboarding every new client — chasing 
 - Server-side upload route validates token before accepting files
 - Agency-side file listing and download in `ClientDetailDrawer` via signed URLs
 - Status flow: submission with files → `onboarded`; without files → `files_pending` (files route confirms real uploads, not a form-side flag)
+- **Correction (2026-08-07):** the "submission with files → `onboarded`" claim above was **never actually true in production.** `submit_onboard` sets `form_completed`, and the files route called `mark_client_onboarded` — a SECURITY DEFINER function that was **specced but never created in the database.** Every call 404'd, and the best-effort caller swallowed the error, so **no client ever reached `onboarded` through the automated flow** from Phase 6 until the fix (function created; the swallow now surfaces as an Activity row). Verified end-to-end afterward: a fresh client submitting with a file now reaches `onboarded`.
 - Cross-session Realtime updates: `/clients` table and dashboard now reflect status changes and new submissions without manual refresh (Supabase Realtime on the `clients` table, RLS-scoped)
 
 ---
@@ -239,6 +240,10 @@ Client deletion doesn't reach into Google, so folders accumulate in the agency's
 When every intake file fails to upload, the `files-uploaded` trigger never fires (`results.some(ok)` is false), so there's no Activity row and no notification.
 → Proposed fix: an Activity row on intake-upload failure; currently a known gap.
 
+**The per-client magic link never expires**
+The intake token has no TTL, so it's a standing write path into that client's Drive folder for anyone holding the link — now a permanent feature, not just a first-run convenience. Already true today; recorded because re-open intake makes it durable.
+→ Accepted trade-off (the always-valid link *is* the feature). A future agency-side "revoke link" control could bound it if needed.
+
 ---
 
 ## Engineering Practices Established
@@ -250,6 +255,9 @@ When every intake file fails to upload, the `files-uploaded` trigger never fires
 - Honest stubs — unbuilt features say so; no dead buttons, no fake success states
 - Phased, scoped build sessions — one deliverable per session, explicit "do not touch" fences
 - Read-before-build investigation prompts used throughout to avoid duplicate work and scope creep
+
+### Process lesson (2026-08-07)
+- **SQL is specced in build sessions and run by hand in the Supabase editor, with nothing verifying it actually landed.** That's how `mark_client_onboarded` was *called by the code for months without existing in the database* — and how a swallowed RPC error kept it invisible. Two mitigations: (1) the caller now surfaces a failed status-advance as an **Activity row** with the real reason (no more server-only logs nobody reads); (2) a one-off audit compared every `.rpc()` / `.from()` in the code against the live database — **all other functions and tables are present**, so `mark_client_onboarded` was the lone gap. A checked-in migration set (or a startup assertion) would prevent a recurrence.
 
 ---
 

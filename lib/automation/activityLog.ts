@@ -1,5 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { SupabaseServerClient } from "@/lib/supabaseServer";
 import type { RunTrigger } from "@/lib/automationRuns";
 
 // Server-only: record one action's outcome to public.automation_runs.
@@ -23,7 +22,7 @@ export type ActionLogInput = {
 };
 
 export async function logActionRun(
-  supabase: SupabaseServerClient,
+  supabase: SupabaseClient,
   input: ActionLogInput,
 ): Promise<void> {
   const { error } = await supabase.from("automation_runs").insert({

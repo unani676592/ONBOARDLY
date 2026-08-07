@@ -8,6 +8,7 @@ import { markClientOnboarded } from "@/lib/onboard";
 import { MAX_FILES } from "@/lib/uploads";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { runTriggerActions } from "@/lib/automation/runTriggerActions";
+import { logActionRun } from "@/lib/automation/activityLog";
 import type { WorkflowRow } from "@/components/app/automations/workflow-persistence";
 
 // Public intake file-upload endpoint. Validates the per-client token first,
@@ -91,15 +92,56 @@ export async function POST(req: Request, { params }: RouteContext) {
   // the sole place that status is set, so 'onboarded' always means a real file
   // exists. Best-effort: a failure here never blocks the upload response.
   if (results.some((r) => r.ok)) {
-    await markClientOnboarded(token);
+    const mark = await markClientOnboarded(token);
 
-    // Fire the files-uploaded automation trigger. This runs session-less (the
-    // intake visitor is anonymous), so we pass the resolved agency userId + a
-    // service_role client; runTriggerActions scopes every op by user_id and runs
-    // only the actions wired downstream of the files-uploaded trigger. Wrapped —
-    // an automation failure must never break the client's upload response.
+    // Everything below runs session-less (the intake visitor is anonymous), so
+    // it uses a service_role client scoped explicitly by user_id. Wrapped — none
+    // of it may break the client's upload response.
     try {
       const admin = createSupabaseAdminClient();
+
+      // Stamp the "new files" signal. `files_updated_at` marks this upload; on
+      // the FIRST upload (the one that onboards the client — status "ok") we seed
+      // `files_seen_at` to match, so the initial submission raises no badge. A
+      // later upload ("unchanged", already onboarded) leaves `files_seen_at`
+      // behind, so `updated_at > seen_at` → the agency sees it.
+      const now = new Date().toISOString();
+      await admin
+        .from("clients")
+        .update(
+          mark.status === "ok"
+            ? { files_updated_at: now, files_seen_at: now }
+            : { files_updated_at: now },
+        )
+        .eq("id", target.clientId)
+        .eq("user_id", target.userId);
+
+      // Never swallow a status-advance failure: the upload still succeeded (the
+      // client's files are stored), but the agency must learn — with the real
+      // reason — that onboarding didn't advance. A silently-dropped RPC error is
+      // exactly how the missing mark_client_onboarded function hid for months.
+      if (mark.status === "error") {
+        const { data: c } = await admin
+          .from("clients")
+          .select("name, email")
+          .eq("id", target.clientId)
+          .eq("user_id", target.userId)
+          .maybeSingle();
+        await logActionRun(admin, {
+          userId: target.userId,
+          clientId: target.clientId,
+          clientName: c?.name ?? "",
+          clientEmail: c?.email ?? "",
+          workflowId: null,
+          actionSubtype: "mark-onboarded",
+          trigger: "files-uploaded",
+          status: "failed",
+          reason: `Couldn’t mark the client onboarded: ${mark.reason}`,
+        });
+      }
+
+      // Fire the files-uploaded automation trigger — runs only the actions wired
+      // downstream of that trigger, scoped by user_id.
       const { data: wf } = await admin
         .from("workflows")
         .select("*")

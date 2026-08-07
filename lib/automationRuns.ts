@@ -40,6 +40,7 @@ export const ACTION_SUBTYPE_LABELS: Record<string, string> = {
   "send-email": "Send email",
   "create-folder": "Create folder",
   "upload-files": "Upload files to Drive",
+  "mark-onboarded": "Mark onboarded",
   "create-task": "Create task",
   "add-crm-record": "Add to Notion",
   condition: "Condition",
